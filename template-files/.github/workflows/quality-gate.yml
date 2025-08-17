@@ -1,0 +1,76 @@
+name: Quality Gate
+
+on:
+  push:
+    branches: [ main, develop, feature/*, fix/*, hotfix/* ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [20]
+        python-version: [3.11]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install root dependencies
+      run: npm ci
+
+    - name: Install frontend dependencies
+      if: ${{ hashFiles('frontend/package.json') != '' }}
+      run: cd frontend && npm ci
+
+    - name: Install backend dependencies
+      if: ${{ hashFiles('backend/requirements.txt') != '' }}
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        pip install black isort flake8 mypy
+
+    - name: Install quality tools
+      run: |
+        pip install pre-commit commitizen detect-secrets
+
+    - name: Create secrets baseline if missing
+      run: |
+        if [[ ! -f .secrets.baseline ]]; then
+          detect-secrets scan . > .secrets.baseline 2>/dev/null || echo '{}' > .secrets.baseline
+        fi
+
+    - name: Run comprehensive quality gate
+      run: |
+        echo "🚨 RUNNING COMPREHENSIVE QUALITY GATE - ZERO TOLERANCE FOR ISSUES"
+        echo "==============================================================="
+        bash scripts/quality-gate.sh all
+
+    - name: Quality gate summary
+      if: success()
+      run: |
+        echo ""
+        echo "🎉 QUALITY GATE PASSED!"
+        echo "All code meets quality standards:"
+        echo "✅ No ESLint errors or warnings"
+        echo "✅ TypeScript compilation successful" 
+        echo "✅ All tests passing"
+        echo "✅ Python code properly formatted and linted"
+        echo "✅ No security issues detected"
+        echo ""
+        echo "Ready for deployment! 🚀"

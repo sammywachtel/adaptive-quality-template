@@ -1,0 +1,8 @@
+# <type>(<scope>): <subject>
+#
+# <body>
+#
+# <footer>
+#
+# Types: feat, fix, docs, style, refactor, test, chore
+# Example: feat(auth): add Google OAuth integration

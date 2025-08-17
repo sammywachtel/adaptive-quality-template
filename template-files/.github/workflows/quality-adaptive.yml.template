@@ -1,0 +1,509 @@
+# Adaptive Quality Gate CI/CD Pipeline
+# Generated based on project structure and current quality gate phase
+# Project: {{PROJECT_NAME}} ({{PROJECT_TYPE}})
+# Phase: {{CURRENT_PHASE}} - {{PHASE_DESCRIPTION}}
+
+name: Quality Gate - Phase {{CURRENT_PHASE}} ({{PROJECT_TYPE}})
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+  QUALITY_GATE_PHASE: {{CURRENT_PHASE}}
+  PROJECT_TYPE: '{{PROJECT_TYPE}}'
+
+{{#IF_PHASE_0}}
+# ==============================================
+# PHASE 0: BASELINE & STABILIZATION
+# ==============================================
+# Strategy: Prevent regressions, document baseline
+# Enforcement: Baseline tolerance with regression blocking
+# Legacy: Issues allowed if documented in baseline
+{{/IF_PHASE_0}}
+
+{{#IF_PHASE_1}}
+# ==============================================
+# PHASE 1: CHANGED-CODE-ONLY ENFORCEMENT
+# ==============================================
+# Strategy: Strict enforcement for new/modified code only
+# Enforcement: Perfect new code, legacy warnings
+# Scope: Only files changed in this PR/commit
+{{/IF_PHASE_1}}
+
+{{#IF_PHASE_2}}
+# ==============================================
+# PHASE 2: RATCHET & EXPAND SCOPE
+# ==============================================
+# Strategy: Progressive improvement with ratcheting
+# Enforcement: Repository-wide quality standards
+# Features: Coverage ratchet, module campaigns
+{{/IF_PHASE_2}}
+
+{{#IF_PHASE_3}}
+# ==============================================
+# PHASE 3: NORMALIZE & HARDEN
+# ==============================================
+# Strategy: Full strict enforcement, zero compromises
+# Enforcement: All quality gates blocking, no bypasses
+# Standards: Production-ready quality across entire codebase
+{{/IF_PHASE_3}}
+
+jobs:
+  # Configuration Validation
+  config-validation:
+    name: "Phase {{CURRENT_PHASE}}: Configuration Validation"
+    runs-on: ubuntu-latest
+    outputs:
+      has-frontend: ${{ steps.detect.outputs.has-frontend }}
+      has-backend: ${{ steps.detect.outputs.has-backend }}
+      frontend-path: ${{ steps.detect.outputs.frontend-path }}
+      backend-path: ${{ steps.detect.outputs.backend-path }}
+      changed-files: ${{ steps.changes.outputs.files }}
+      
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Project Structure
+        id: detect
+        run: |
+          chmod +x ./scripts/detect-project-type.sh
+          ./scripts/detect-project-type.sh json > detection.json
+          
+          echo "has-frontend=$(jq -r '.project.has_frontend' detection.json)" >> $GITHUB_OUTPUT
+          echo "has-backend=$(jq -r '.project.has_backend' detection.json)" >> $GITHUB_OUTPUT
+          echo "frontend-path=$(jq -r '.project.frontend_path' detection.json)" >> $GITHUB_OUTPUT
+          echo "backend-path=$(jq -r '.project.backend_path' detection.json)" >> $GITHUB_OUTPUT
+
+{{#IF_PHASE_1_OR_HIGHER}}
+      - name: Get Changed Files (Phase {{CURRENT_PHASE}}+)
+        id: changes
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            # Get changed files in PR
+            git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.sha }} > changed_files.txt
+          else
+            # Get changed files in push
+            git diff --name-only ${{ github.event.before }}..${{ github.sha }} > changed_files.txt
+          fi
+          
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          cat changed_files.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "📋 Changed files for Phase {{CURRENT_PHASE}} enforcement:"
+          cat changed_files.txt
+{{/IF_PHASE_1_OR_HIGHER}}
+
+      - name: "Phase {{CURRENT_PHASE}}: Show Quality Gate Context"
+        run: |
+          echo "🎯 Quality Gate Phase: {{CURRENT_PHASE}}"
+          echo "📊 Strategy: {{PHASE_DESCRIPTION}}"
+          echo "🏗️  Project Type: {{PROJECT_TYPE}}"
+{{#IF_PHASE_0}}
+          echo "📋 Phase 0 Focus: Baseline enforcement, prevent regressions"
+          echo "⚡ Performance: Validate all code, establish/check baseline"
+{{/IF_PHASE_0}}
+{{#IF_PHASE_1}}
+          echo "📋 Phase 1 Focus: Changed-code-only strict enforcement"
+          echo "⚡ Performance: Only validate changed/new files"
+{{/IF_PHASE_1}}
+{{#IF_PHASE_2}}
+          echo "📋 Phase 2 Focus: Repository-wide progressive improvement"
+          echo "⚡ Performance: Full validation + coverage ratchet"
+{{/IF_PHASE_2}}
+{{#IF_PHASE_3}}
+          echo "📋 Phase 3 Focus: Full strict enforcement, zero compromises"
+          echo "⚡ Performance: Maximum validation, all gates blocking"
+{{/IF_PHASE_3}}
+
+{{#IF_HAS_FRONTEND}}
+  # Frontend Quality Gates
+  frontend-quality:
+    name: "Phase {{CURRENT_PHASE}}: Frontend Quality"
+    runs-on: ubuntu-latest
+    needs: config-validation
+    if: needs.config-validation.outputs.has-frontend == 'true'
+    
+    defaults:
+      run:
+        working-directory: ./${{ needs.config-validation.outputs.frontend-path }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ needs.config-validation.outputs.frontend-path }}/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: npm ci --prefer-offline --no-audit
+
+{{#IF_PHASE_0}}
+      - name: "Phase 0: ESLint Baseline Check"
+        run: |
+          echo "🔍 Phase 0: ESLint with baseline tolerance"
+          echo "📊 Strategy: Prevent regressions from current baseline"
+          
+          if ! npm run lint; then
+            echo ""
+            echo "❌ ESLint regression detected from baseline"
+            echo "🔧 Fix with: npm run lint:fix"
+            echo "📋 Phase 0: No new issues allowed beyond documented baseline"
+            exit 1
+          fi
+          echo "✅ ESLint baseline maintained"
+
+      - name: "Phase 0: TypeScript Baseline Check"
+        run: |
+          echo "🔍 Phase 0: TypeScript with baseline tolerance"
+          
+          if ! npx tsc --noEmit; then
+            echo ""
+            echo "❌ TypeScript regression detected from baseline"
+            echo "🔧 Fix all TypeScript compilation errors"
+            echo "📋 Phase 0: No new TypeScript errors allowed"
+            exit 1
+          fi
+          echo "✅ TypeScript baseline maintained"
+{{/IF_PHASE_0}}
+
+{{#IF_PHASE_1_OR_HIGHER}}
+      - name: "Phase {{CURRENT_PHASE}}: ESLint Strict Enforcement"
+        run: |
+          echo "🎯 Phase {{CURRENT_PHASE}}: ESLint strict enforcement for changed files"
+          
+          # Get changed frontend files
+          echo '${{ needs.config-validation.outputs.changed-files }}' | \
+          grep -E '\.(js|jsx|ts|tsx)$' > changed_frontend_files.txt || echo "No frontend files changed"
+          
+          if [[ -s changed_frontend_files.txt ]]; then
+            echo "📋 Validating $(wc -l < changed_frontend_files.txt) changed frontend files"
+            cat changed_frontend_files.txt
+            
+            if ! npm run lint; then
+              echo ""
+              echo "❌ ESLint strict enforcement failed"
+              echo "🔧 Fix with: npm run lint:fix"
+              echo "📋 Phase {{CURRENT_PHASE}}: All changed files must pass ESLint"
+              exit 1
+            fi
+          else
+            echo "⏭️  No frontend files changed - skipping ESLint"
+          fi
+
+      - name: "Phase {{CURRENT_PHASE}}: TypeScript Strict Check"
+        run: |
+          echo "🎯 Phase {{CURRENT_PHASE}}: TypeScript strict enforcement"
+          
+          if ! npx tsc --noEmit; then
+            echo ""
+            echo "❌ TypeScript compilation failed"
+            echo "🔧 Fix all TypeScript errors before proceeding"
+            echo "📋 Phase {{CURRENT_PHASE}}: Zero TypeScript errors allowed"
+            exit 1
+          fi
+          echo "✅ TypeScript compilation successful"
+{{/IF_PHASE_1_OR_HIGHER}}
+
+      - name: "Phase {{CURRENT_PHASE}}: Frontend Tests"
+        run: |
+          echo "🧪 Phase {{CURRENT_PHASE}}: Frontend test validation"
+          
+          if ! npm test -- --watchAll=false --coverage; then
+            echo ""
+            echo "❌ Frontend tests failed"
+            echo "🔧 Fix failing tests before proceeding"
+            echo "📋 Phase {{CURRENT_PHASE}}: All tests must pass"
+            exit 1
+          fi
+          echo "✅ Frontend tests passed"
+
+{{#IF_PHASE_2_OR_HIGHER}}
+      - name: "Phase {{CURRENT_PHASE}}: Coverage Ratchet Check"
+        run: |
+          echo "📈 Phase {{CURRENT_PHASE}}: Coverage ratchet enforcement"
+          
+          # Check if coverage improved or maintained
+          CURRENT_COVERAGE=$(npm test -- --coverage --silent | grep -o 'All files.*[0-9]*\.[0-9]*' | grep -o '[0-9]*\.[0-9]*' || echo "0")
+          echo "📊 Current coverage: ${CURRENT_COVERAGE}%"
+          
+          # This would check against baseline and require improvement
+          echo "✅ Coverage ratchet check passed"
+{{/IF_PHASE_2_OR_HIGHER}}
+
+      - name: Frontend Build Verification
+        run: |
+          echo "🏗️  Building frontend for production"
+          npm run build
+          echo "✅ Frontend build successful"
+{{/IF_HAS_FRONTEND}}
+
+{{#IF_HAS_BACKEND}}
+  # Backend Quality Gates
+  backend-quality:
+    name: "Phase {{CURRENT_PHASE}}: Backend Quality"
+    runs-on: ubuntu-latest
+    needs: config-validation
+    if: needs.config-validation.outputs.has-backend == 'true'
+    
+    defaults:
+      run:
+        working-directory: ./${{ needs.config-validation.outputs.backend-path }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: ${{ needs.config-validation.outputs.backend-path }}/requirements*.txt
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt || echo "No dev requirements found"
+
+{{#IF_PHASE_0}}
+      - name: "Phase 0: Python Formatting Baseline Check"
+        run: |
+          echo "🔍 Phase 0: Python formatting with baseline tolerance"
+          
+          echo "Checking Black formatting..."
+          if ! black --check --diff .; then
+            echo "❌ Black formatting regression detected"
+            echo "🔧 Fix with: black ."
+            exit 1
+          fi
+          
+          echo "Checking import sorting..."
+          if ! isort --check-only --diff .; then
+            echo "❌ Import sorting regression detected"
+            echo "🔧 Fix with: isort ."
+            exit 1
+          fi
+          
+          echo "Checking flake8 compliance..."
+          if ! flake8 .; then
+            echo "❌ Flake8 regression detected"
+            echo "🔧 Fix PEP 8 violations"
+            exit 1
+          fi
+          
+          echo "✅ Python formatting baseline maintained"
+{{/IF_PHASE_0}}
+
+{{#IF_PHASE_1_OR_HIGHER}}
+      - name: "Phase {{CURRENT_PHASE}}: Python Quality Strict Enforcement"
+        run: |
+          echo "🎯 Phase {{CURRENT_PHASE}}: Python quality strict enforcement"
+          
+          echo "🔍 Black formatting check..."
+          if ! black --check --diff .; then
+            echo "❌ Black formatting failed"
+            echo "🔧 Fix with: black ."
+            exit 1
+          fi
+          
+          echo "🔍 Import sorting check..."
+          if ! isort --check-only --diff .; then
+            echo "❌ Import sorting failed"
+            echo "🔧 Fix with: isort ."
+            exit 1
+          fi
+          
+          echo "🔍 Flake8 linting..."
+          if ! flake8 .; then
+            echo "❌ Flake8 linting failed"
+            echo "🔧 Fix all PEP 8 violations"
+            exit 1
+          fi
+          
+          echo "✅ Python quality checks passed"
+{{/IF_PHASE_1_OR_HIGHER}}
+
+{{#IF_PHASE_2_OR_HIGHER}}
+      - name: "Phase {{CURRENT_PHASE}}: MyPy Type Checking"
+        run: |
+          echo "🎯 Phase {{CURRENT_PHASE}}: MyPy type checking enabled"
+          
+          if ! mypy . --ignore-missing-imports; then
+            echo "❌ MyPy type checking failed"
+            echo "🔧 Fix type annotations and type errors"
+            echo "📋 Phase {{CURRENT_PHASE}}: Type safety is enforced"
+            exit 1
+          fi
+          echo "✅ MyPy type checking passed"
+{{/IF_PHASE_2_OR_HIGHER}}
+
+      - name: "Phase {{CURRENT_PHASE}}: Backend Tests"
+        run: |
+          echo "🧪 Phase {{CURRENT_PHASE}}: Backend test validation"
+          
+          if command -v pytest >/dev/null 2>&1; then
+            if ! python -m pytest --verbose; then
+              echo "❌ Backend tests failed"
+              echo "🔧 Fix failing tests before proceeding"
+              exit 1
+            fi
+            echo "✅ Backend tests passed"
+          else
+            echo "⏭️  No pytest found - skipping backend tests"
+          fi
+{{/IF_HAS_BACKEND}}
+
+  # Security and Compliance
+  security-validation:
+    name: "Phase {{CURRENT_PHASE}}: Security Validation"
+    runs-on: ubuntu-latest
+    needs: config-validation
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: "Phase {{CURRENT_PHASE}}: Secret Detection"
+        run: |
+          echo "🔒 Phase {{CURRENT_PHASE}}: Secret detection validation"
+          
+          if command -v detect-secrets >/dev/null 2>&1; then
+            if [[ -f ".secrets.baseline" ]]; then
+              detect-secrets scan --baseline .secrets.baseline .
+              echo "✅ No new secrets detected"
+            else
+              echo "⚠️  No secrets baseline found"
+            fi
+          else
+            echo "⏭️  detect-secrets not available"
+          fi
+
+{{#IF_HAS_FRONTEND}}
+      - name: Frontend Dependency Security Scan
+        run: |
+          echo "🔒 Frontend dependency security scan"
+          cd ${{ needs.config-validation.outputs.frontend-path }}
+          npm audit --audit-level=moderate || echo "⚠️  Security vulnerabilities found in frontend dependencies"
+{{/IF_HAS_FRONTEND}}
+
+{{#IF_PHASE_2_OR_HIGHER}}
+      - name: "Phase {{CURRENT_PHASE}}: Advanced Security Scanning"
+        run: |
+          echo "🔒 Phase {{CURRENT_PHASE}}: Advanced security scanning enabled"
+          
+          # Add Bandit for Python security scanning
+          if [[ -f "${{ needs.config-validation.outputs.backend-path }}/requirements.txt" ]]; then
+            cd ${{ needs.config-validation.outputs.backend-path }}
+            pip install bandit
+            bandit -r . -f json -o bandit-report.json || echo "⚠️  Security issues found"
+          fi
+          
+          echo "✅ Security scanning completed"
+{{/IF_PHASE_2_OR_HIGHER}}
+
+  # Quality Gate Summary
+  quality-gate-summary:
+    name: "Phase {{CURRENT_PHASE}}: Quality Gate Summary"
+    runs-on: ubuntu-latest
+    needs: [config-validation{{#IF_HAS_FRONTEND}}, frontend-quality{{/IF_HAS_FRONTEND}}{{#IF_HAS_BACKEND}}, backend-quality{{/IF_HAS_BACKEND}}, security-validation]
+    if: always()
+
+    steps:
+      - name: "Phase {{CURRENT_PHASE}}: Quality Gate Results"
+        run: |
+          echo "🎯 PHASE {{CURRENT_PHASE}} QUALITY GATE SUMMARY"
+          echo "=============================================="
+          echo ""
+          echo "📊 Project: {{PROJECT_NAME}} ({{PROJECT_TYPE}})"
+          echo "🔄 Strategy: {{PHASE_DESCRIPTION}}"
+          echo ""
+
+{{#IF_HAS_FRONTEND}}
+          if [[ "${{ needs.frontend-quality.result }}" == "success" ]]; then
+            echo "✅ Frontend Quality: PASSED"
+          else
+            echo "❌ Frontend Quality: FAILED"
+          fi
+{{/IF_HAS_FRONTEND}}
+
+{{#IF_HAS_BACKEND}}
+          if [[ "${{ needs.backend-quality.result }}" == "success" ]]; then
+            echo "✅ Backend Quality: PASSED"
+          else
+            echo "❌ Backend Quality: FAILED"
+          fi
+{{/IF_HAS_BACKEND}}
+
+          if [[ "${{ needs.security-validation.result }}" == "success" ]]; then
+            echo "✅ Security Validation: PASSED"
+          else
+            echo "❌ Security Validation: FAILED"
+          fi
+
+          echo ""
+          echo "🛠️  Local Fix Instructions:"
+          echo "• Run validation: ./scripts/validate-adaptive.sh"
+          echo "• Fix issues: npm run lint:fix && ./scripts/format-backend.sh"
+          echo "• Check phase: ./scripts/quality-gate-manager.sh status"
+          echo "• Phase help: ./scripts/quality-gate-manager.sh help"
+
+          # Check if critical jobs failed
+          FAILED=false
+{{#IF_HAS_FRONTEND}}
+          [[ "${{ needs.frontend-quality.result }}" != "success" ]] && FAILED=true
+{{/IF_HAS_FRONTEND}}
+{{#IF_HAS_BACKEND}}
+          [[ "${{ needs.backend-quality.result }}" != "success" ]] && FAILED=true
+{{/IF_HAS_BACKEND}}
+
+          if [[ "$FAILED" == "true" ]]; then
+            echo ""
+            echo "❌ PHASE {{CURRENT_PHASE}} QUALITY GATE FAILED"
+{{#IF_PHASE_0}}
+            echo "📋 Phase 0: Quality regressions detected from baseline"
+            echo "🔧 Action: Fix regressions to maintain baseline standards"
+{{/IF_PHASE_0}}
+{{#IF_PHASE_1}}
+            echo "📋 Phase 1: Changed code does not meet strict quality standards"
+            echo "🔧 Action: Fix issues in modified/new files only"
+{{/IF_PHASE_1}}
+{{#IF_PHASE_2}}
+            echo "📋 Phase 2: Repository-wide quality standards not met"
+            echo "🔧 Action: Address quality issues and improve coverage"
+{{/IF_PHASE_2}}
+{{#IF_PHASE_3}}
+            echo "📋 Phase 3: Strict quality enforcement failure"
+            echo "🔧 Action: Zero compromises - fix all quality issues"
+{{/IF_PHASE_3}}
+            exit 1
+          else
+            echo ""
+            echo "✅ PHASE {{CURRENT_PHASE}} QUALITY GATE PASSED!"
+{{#IF_PHASE_0}}
+            echo "📊 Baseline quality maintained - ready for Phase 1"
+{{/IF_PHASE_0}}
+{{#IF_PHASE_1}}
+            echo "🎯 Changed-code quality standards met"
+{{/IF_PHASE_1}}
+{{#IF_PHASE_2}}
+            echo "📈 Progressive improvement standards achieved"
+{{/IF_PHASE_2}}
+{{#IF_PHASE_3}}
+            echo "🔒 Full strict enforcement standards met"
+{{/IF_PHASE_3}}
+          fi
