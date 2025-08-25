@@ -60,7 +60,7 @@ read_config() {
     local default_value="${2:-false}"
     
     if [[ -f "$CONFIG_FILE" ]] && command -v yq >/dev/null 2>&1; then
-        yq eval "$key" "$CONFIG_FILE" 2>/dev/null || echo "$default_value"
+        yq eval ".$key" "$CONFIG_FILE" 2>/dev/null || echo "$default_value"
     elif [[ -f "$CONFIG_FILE" ]] && command -v python3 >/dev/null 2>&1; then
         python3 -c "
 import yaml, sys
@@ -320,7 +320,7 @@ validate_frontend() {
     local typescript_enabled=$(read_config "tools.frontend.typescript.enabled")
     if [[ "$typescript_enabled" == "true" ]]; then
         if [[ -f "tsconfig.json" ]] || contains_files "*.ts" "src"; then
-            run_phase_validation "TypeScript check" "npx tsc --noEmit" "typescript" "Fix TypeScript errors" "\.(ts|tsx)$" || frontend_failed=true
+            run_phase_validation "TypeScript check" "npx tsc --noEmit" "typescript" "npx tsc --noEmit --pretty" "\.(ts|tsx)$" || frontend_failed=true
         else
             print_skip "TypeScript not configured"
         fi
@@ -330,7 +330,7 @@ validate_frontend() {
     local testing_enabled=$(read_config "tools.frontend.testing.unit_tests")
     if [[ "$testing_enabled" == "true" ]]; then
         if [[ -f "package.json" ]] && (npm list jest >/dev/null 2>&1 || npm list vitest >/dev/null 2>&1); then
-            run_validation "Frontend tests" "npm test -- --run --passWithNoTests" "frontend-tests" "Fix failing tests" || frontend_failed=true
+            run_validation "Frontend tests" "npm test -- --run --passWithNoTests" "frontend-tests" "npm test -- --verbose" || frontend_failed=true
         else
             print_skip "Frontend tests not configured"
         fi
@@ -338,7 +338,7 @@ validate_frontend() {
     
     # Build check
     if [[ -f "package.json" ]] && npm run build --dry-run >/dev/null 2>&1; then
-        run_validation "Frontend build" "npm run build" "frontend-build" "Fix build errors" || frontend_failed=true
+        run_validation "Frontend build" "npm run build" "frontend-build" "npm run build" || frontend_failed=true
     fi
     
     cd "$original_dir"
@@ -389,19 +389,19 @@ validate_backend() {
         # flake8 linting check
         local flake8_enabled=$(read_config "tools.backend.python.flake8.enabled")
         if [[ "$flake8_enabled" == "true" ]] && command -v flake8 >/dev/null 2>&1; then
-            run_phase_validation "Flake8 linting" "flake8 ." "flake8" "Fix flake8 errors" "\.py$" || backend_failed=true
+            run_phase_validation "Flake8 linting" "flake8 ." "flake8" "flake8 . --show-source" "\.py$" || backend_failed=true
         fi
         
         # MyPy type checking (if enabled)
         local mypy_enabled=$(read_config "tools.backend.python.mypy.enabled")
         if [[ "$mypy_enabled" == "true" ]] && command -v mypy >/dev/null 2>&1; then
-            run_validation "MyPy type checking" "mypy ." "mypy" "Fix type errors" || backend_failed=true
+            run_validation "MyPy type checking" "mypy ." "mypy" "mypy . --show-error-codes" || backend_failed=true
         fi
         
         # Backend tests
         local testing_enabled=$(read_config "tools.backend.testing.unit_tests")
         if [[ "$testing_enabled" == "true" ]] && command -v pytest >/dev/null 2>&1; then
-            run_validation "Backend tests" "python -m pytest" "backend-tests" "Fix failing tests" || backend_failed=true
+            run_validation "Backend tests" "python -m pytest" "backend-tests" "python -m pytest -v" || backend_failed=true
         fi
     fi
     
@@ -587,9 +587,71 @@ main() {
     
     echo ""
     print_status "For configuration options, see: $CONFIG_FILE"
-    print_status "For phase management, use: ./scripts/quality-gate-manager.sh"
+    print_status "For phase management, use: $0 status|advance|set-phase"
     
     exit $exit_code
+}
+
+# Phase management functions
+get_current_phase() {
+    local phase=$(read_config "quality_gates.current_phase" "0")
+    echo "$phase"
+}
+
+set_phase() {
+    local new_phase="$1"
+    
+    if [[ ! "$new_phase" =~ ^[0-3]$ ]]; then
+        print_error "Invalid phase: $new_phase. Must be 0, 1, 2, or 3"
+        return 1
+    fi
+    
+    if [[ -f "$CONFIG_FILE" ]] && command -v yq >/dev/null 2>&1; then
+        # Create backup
+        cp "$CONFIG_FILE" "${CONFIG_FILE}.backup"
+        
+        # Update phase
+        yq eval ".quality_gates.current_phase = $new_phase" -i "$CONFIG_FILE"
+        
+        print_success "Advanced to Phase $new_phase"
+        # Update the global phase variable and show guidance
+        CURRENT_PHASE="$new_phase"
+        show_phase_guidance
+    else
+        print_error "Cannot update configuration. Ensure yq is installed and $CONFIG_FILE exists"
+        return 1
+    fi
+}
+
+advance_phase() {
+    local current_phase=$(get_current_phase)
+    local next_phase=$((current_phase + 1))
+    
+    if [[ $next_phase -gt 3 ]]; then
+        print_warning "Already at maximum phase (3). Cannot advance further."
+        return 1
+    fi
+    
+    print_status "Advancing from Phase $current_phase to Phase $next_phase..."
+    set_phase "$next_phase"
+}
+
+show_phase_status() {
+    local current_phase=$(get_current_phase)
+    
+    print_header "Quality Gate Phase Status"
+    echo -e "${BOLD}Current Phase:${NC} $current_phase"
+    echo ""
+    
+    # Update the global phase variable and show guidance
+    CURRENT_PHASE="$current_phase"
+    show_phase_guidance
+    
+    echo ""
+    echo -e "${BOLD}Phase Management Commands:${NC}"
+    echo -e "  ${CYAN}./scripts/validate-adaptive.sh advance${NC}     - Move to next phase"
+    echo -e "  ${CYAN}./scripts/validate-adaptive.sh set-phase N${NC} - Set specific phase (0-3)"
+    echo -e "  ${CYAN}./scripts/validate-adaptive.sh status${NC}      - Show current phase status"
 }
 
 # Command-line interface
@@ -615,15 +677,37 @@ case "${1:-validate}" in
         validate_security  
         show_summary
         ;;
+    "advance")
+        advance_phase
+        ;;
+    "set-phase")
+        if [[ -z "$2" ]]; then
+            print_error "Phase number required. Usage: $0 set-phase N (where N is 0-3)"
+            exit 1
+        fi
+        set_phase "$2"
+        ;;
+    "status")
+        show_phase_status
+        ;;
     "help")
         echo "Usage: $0 [command]"
         echo ""
         echo "Commands:"
-        echo "  validate    Run all validations (default)"
-        echo "  frontend    Run only frontend validations"
-        echo "  backend     Run only backend validations"
-        echo "  security    Run only security validations"
-        echo "  help        Show this help message"
+        echo ""
+        echo "Validation:"
+        echo "  validate      Run all validations (default)"
+        echo "  frontend      Run only frontend validations"
+        echo "  backend       Run only backend validations"
+        echo "  security      Run only security validations"
+        echo ""
+        echo "Phase Management:"
+        echo "  status        Show current quality gate phase"
+        echo "  advance       Move to next phase (0→1→2→3)"
+        echo "  set-phase N   Set specific phase (0-3)"
+        echo ""
+        echo "Other:"
+        echo "  help          Show this help message"
         echo ""
         echo "Configuration:"
         echo "  Edit .quality-config.yaml to customize validation behavior"
