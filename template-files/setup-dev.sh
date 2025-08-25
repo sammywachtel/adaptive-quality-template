@@ -129,13 +129,17 @@ main() {
         print_status $BLUE "ℹ️  Virtual environment will be created in backend/.venv (Python 3.11+)"
     fi
 
-    # Check npm
-    if ! command -v npm &> /dev/null; then
-        print_status $RED "❌ npm is not installed"
-        exit 1
+    # Check npm (only if package.json exists or frontend directory exists)
+    if [[ -f "package.json" || -d "frontend" ]]; then
+        if ! command -v npm &> /dev/null; then
+            print_status $RED "❌ npm is not installed (required for JavaScript/TypeScript projects)"
+            exit 1
+        else
+            NPM_VERSION=$(npm --version)
+            print_status $GREEN "✅ npm found: $NPM_VERSION"
+        fi
     else
-        NPM_VERSION=$(npm --version)
-        print_status $GREEN "✅ npm found: $NPM_VERSION"
+        print_status $BLUE "Python-only project detected - npm not required"
     fi
 
     # Install pre-commit (always needed)
@@ -161,10 +165,14 @@ main() {
         print_status $GREEN "✅ Quality gate tools installed"
     fi
 
-    # Install root dependencies
-    print_header "INSTALLING ROOT DEPENDENCIES"
-    print_status $BLUE "Installing root package dependencies..."
-    npm install
+    # Install root dependencies (only if package.json exists)
+    if [[ -f "package.json" ]]; then
+        print_header "INSTALLING ROOT DEPENDENCIES"
+        print_status $BLUE "Installing root package dependencies..."
+        npm install
+    else
+        print_status $BLUE "No package.json found - skipping npm dependencies (Python-only project)"
+    fi
 
     # Install frontend dependencies
     print_header "INSTALLING FRONTEND DEPENDENCIES"

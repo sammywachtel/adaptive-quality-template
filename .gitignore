@@ -99,3 +99,11 @@ Pipfile.lock
 # Temporary files
 *.tmp
 *.temp
+# Quality gate files
+.quality-config.yaml.bak
+.quality-baseline.json
+quality-reports/
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/

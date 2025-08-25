@@ -54,7 +54,7 @@ setup_adaptive_configuration() {
     
     # Generate project-specific configurations
     print_status "Generating adaptive configurations..."
-    ./scripts/generate-config.sh
+    "$TEMPLATE_DIR/scripts/generate-config.sh"
     
     # Copy additional template files
     cp "$TEMPLATE_DIR/setup-dev.sh" .
@@ -105,17 +105,59 @@ update_package_json() {
     fi
 }
 
-# Install required dependencies
+# Install required dependencies (adaptive based on project type)
 install_dependencies() {
     print_status "Installing required dependencies..."
     
-    # Install concurrently if not already present
-    if ! npm list concurrently &> /dev/null; then
-        npm install --save-dev concurrently
-        print_status "✓ Installed concurrently"
+    # Detect if we have frontend components that need concurrently
+    local has_frontend=false
+    local project_type=""
+    
+    if command -v ./scripts/detect-project-type.sh >/dev/null 2>&1; then
+        has_frontend=$(./scripts/detect-project-type.sh json 2>/dev/null | jq -r '.project.has_frontend // false' 2>/dev/null || echo "false")
+        project_type=$(./scripts/detect-project-type.sh json 2>/dev/null | jq -r '.project.type // "unknown"' 2>/dev/null || echo "unknown")
+    fi
+    
+    # Only install npm dependencies if we have frontend or fullstack project
+    if [[ "$has_frontend" == "true" || "$project_type" == "fullstack" || -f "package.json" ]]; then
+        # Install concurrently if not already present
+        if ! npm list concurrently &> /dev/null; then
+            npm install --save-dev concurrently
+            print_status "✓ Installed concurrently"
+        fi
+    else
+        print_status "Python-only project detected - skipping npm dependencies"
     fi
     
     print_success "Dependencies installed"
+}
+
+# Clean up unnecessary scripts after setup
+cleanup_scripts() {
+    print_status "Cleaning up unnecessary scripts..."
+    
+    local scripts_to_remove=()
+    
+    # Only remove generate-config.sh (most users won't need this after setup)
+    # Keep detect-project-type.sh for CI workflow compatibility
+    if [[ -f "scripts/generate-config.sh" ]]; then
+        scripts_to_remove+=("scripts/generate-config.sh")
+    fi
+    
+    # Remove scripts if any were identified
+    if [[ ${#scripts_to_remove[@]} -gt 0 ]]; then
+        for script in "${scripts_to_remove[@]}"; do
+            rm -f "$script"
+            print_status "✓ Removed $(basename "$script") (rarely needed after setup)"
+        done
+    fi
+    
+    # Show what's kept and why
+    print_status "Keeping essential scripts:"
+    [[ -f "scripts/validate-adaptive.sh" ]] && print_status "  ✓ validate-adaptive.sh (core validation)"
+    [[ -f "scripts/detect-project-type.sh" ]] && print_status "  ✓ detect-project-type.sh (CI workflow dependency)"
+    
+    print_success "Script cleanup complete"
 }
 
 # Run the setup script
@@ -134,6 +176,7 @@ main() {
     setup_adaptive_configuration
     update_package_json
     install_dependencies
+    cleanup_scripts
     
     echo ""
     print_status "Setup complete! Now running development environment setup..."
