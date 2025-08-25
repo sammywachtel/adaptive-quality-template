@@ -54,7 +54,7 @@ setup_adaptive_configuration() {
     
     # Generate project-specific configurations
     print_status "Generating adaptive configurations..."
-    ./scripts/generate-config.sh
+    "$TEMPLATE_DIR/scripts/generate-config.sh"
     
     # Copy additional template files
     cp "$TEMPLATE_DIR/setup-dev.sh" .
