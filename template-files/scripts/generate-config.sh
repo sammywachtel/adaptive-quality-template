@@ -330,74 +330,46 @@ except:
     # Process the CI workflow template with more sophisticated replacements
     if [[ -f "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" ]]; then
         # Create a temporary processing script for complex template logic
-        python3 -c "
-import re
-import sys
-
-# Read template
-with open('$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template', 'r') as f:
-    template = f.read()
-
-# Define replacements
-replacements = {
-    '{{PROJECT_NAME}}': '$PROJECT_NAME',
-    '{{PROJECT_TYPE}}': '$(extract_detection_value '.project.type')',
-    '{{CURRENT_PHASE}}': '$current_phase',
-    '{{PHASE_DESCRIPTION}}': '$phase_description',
-    '{{HAS_FRONTEND}}': '$has_frontend',
-    '{{HAS_BACKEND}}': '$has_backend',
-    '{{FRONTEND_PATH}}': '$frontend_path',
-    '{{BACKEND_PATH}}': '$backend_path'
-}
-
-# Process basic replacements
-for placeholder, value in replacements.items():
-    template = template.replace(placeholder, value)
-
-# Process conditional blocks
-def process_conditional(match):
-    condition = match.group(1)
-    content = match.group(2)
-    
-    # Evaluate conditions
-    if condition == 'IF_HAS_FRONTEND' and '$has_frontend' == 'true':
-        return content
-    elif condition == 'IF_HAS_BACKEND' and '$has_backend' == 'true':
-        return content
-    elif condition == 'IF_PHASE_0' and '$current_phase' == '0':
-        return content
-    elif condition == 'IF_PHASE_1' and '$current_phase' == '1':
-        return content
-    elif condition == 'IF_PHASE_2' and '$current_phase' == '2':
-        return content
-    elif condition == 'IF_PHASE_3' and '$current_phase' == '3':
-        return content
-    elif condition == 'IF_PHASE_1_OR_HIGHER' and int('$current_phase') >= 1:
-        return content
-    elif condition == 'IF_PHASE_2_OR_HIGHER' and int('$current_phase') >= 2:
-        return content
-    else:
-        return ''
-
-# Process conditional blocks
-template = re.sub(r'{{#(\w+)}}(.*?){{/\1}}', process_conditional, template, flags=re.DOTALL)
-
-# Write processed template
-with open('.github/workflows/quality-adaptive.yml', 'w') as f:
-    f.write(template)
-
-print('Adaptive CI workflow generated')
-" 2>/dev/null || {
-            # Fallback: simple sed-based processing
-            sed \
-                -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
-                -e "s|{{PROJECT_TYPE}}|$(extract_detection_value '.project.type')|g" \
-                -e "s|{{CURRENT_PHASE}}|$current_phase|g" \
-                -e "s|{{PHASE_DESCRIPTION}}|$phase_description|g" \
-                "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" > .github/workflows/quality-adaptive.yml
-        }
+        # Use a simpler sed-based approach that works correctly
+        sed -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
+            -e "s|{{PROJECT_TYPE}}|$(extract_detection_value '.project.type')|g" \
+            -e "s|{{CURRENT_PHASE}}|$current_phase|g" \
+            -e "s|{{PHASE_DESCRIPTION}}|$phase_description|g" \
+            -e "s|{{HAS_FRONTEND}}|$has_frontend|g" \
+            -e "s|{{HAS_BACKEND}}|$has_backend|g" \
+            -e "s|{{FRONTEND_PATH}}|$frontend_path|g" \
+            -e "s|{{BACKEND_PATH}}|$backend_path|g" \
+            "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" > .github/workflows/quality-adaptive.yml.tmp
         
-        print_success "Generated adaptive CI workflow for Phase $current_phase"
+        # Process conditional blocks based on current phase
+        if [[ "$current_phase" == "0" ]]; then
+            # Phase 0: Keep baseline checks, remove higher phase blocks
+            sed -e '/{{#IF_PHASE_0}}/d' -e '/{{\/IF_PHASE_0}}/d' \
+                -e '/{{#IF_PHASE_1_OR_HIGHER}}/,/{{\/IF_PHASE_1_OR_HIGHER}}/d' \
+                -e '/{{#IF_PHASE_2_OR_HIGHER}}/,/{{\/IF_PHASE_2_OR_HIGHER}}/d' \
+                .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
+        elif [[ "$current_phase" == "1" ]]; then
+            # Phase 1: Keep phase 0 and 1+ blocks, remove 2+ blocks
+            sed -e '/{{#IF_PHASE_0}}/,/{{\/IF_PHASE_0}}/d' \
+                -e '/{{#IF_PHASE_1_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_1_OR_HIGHER}}/d' \
+                -e '/{{#IF_PHASE_2_OR_HIGHER}}/,/{{\/IF_PHASE_2_OR_HIGHER}}/d' \
+                .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
+        elif [[ "$current_phase" == "2" ]]; then
+            # Phase 2: Keep phase 0, 1+, and 2+ blocks
+            sed -e '/{{#IF_PHASE_0}}/,/{{\/IF_PHASE_0}}/d' \
+                -e '/{{#IF_PHASE_1_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_1_OR_HIGHER}}/d' \
+                -e '/{{#IF_PHASE_2_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_2_OR_HIGHER}}/d' \
+                .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
+        else
+            # Phase 3 or higher: Keep all blocks
+            sed -e '/{{#IF_PHASE_0}}/,/{{\/IF_PHASE_0}}/d' \
+                -e '/{{#IF_PHASE_1_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_1_OR_HIGHER}}/d' \
+                -e '/{{#IF_PHASE_2_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_2_OR_HIGHER}}/d' \
+                .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
+        fi
+        
+        rm -f .github/workflows/quality-adaptive.yml.tmp
+        echo "Adaptive CI workflow generated"
     else
         # Fallback to basic workflow
         cp "$TEMPLATE_DIR/.github/workflows/quality-standardized.yml" .github/workflows/ 2>/dev/null || true

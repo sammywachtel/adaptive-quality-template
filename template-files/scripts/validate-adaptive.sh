@@ -436,8 +436,37 @@ validate_security() {
     
     # Dependency scanning for backend  
     local has_python=$(read_config "project.structure.has_python")
-    if [[ "$has_python" == "true" ]] && command -v safety >/dev/null 2>&1; then
-        run_validation "Python dependency scan" "safety check" "safety" "safety check --full-report && pip install --upgrade [vulnerable-packages]" || security_failed=true
+    if [[ "$has_python" == "true" ]]; then
+        if command -v pip-audit >/dev/null 2>&1; then
+            # Set up pip-audit to use the correct Python environment
+            local pip_audit_cmd="pip-audit"
+            local pip_audit_fix_cmd="pip-audit --desc"
+            
+            # Handle virtual environments to avoid unintuitive audits
+            if [[ -n "$VIRTUAL_ENV" ]]; then
+                # Already in activated virtual environment
+                pip_audit_cmd="PIPAPI_PYTHON_LOCATION=\"$VIRTUAL_ENV/bin/python\" pip-audit"
+                pip_audit_fix_cmd="PIPAPI_PYTHON_LOCATION=\"$VIRTUAL_ENV/bin/python\" pip-audit --desc"
+            elif [[ -f ".venv/bin/python" ]]; then
+                # Virtual environment exists but not activated
+                local venv_python="$(pwd)/.venv/bin/python"
+                pip_audit_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit"
+                pip_audit_fix_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit --desc"
+            elif [[ -f "venv/bin/python" ]]; then
+                # Alternative venv name
+                local venv_python="$(pwd)/venv/bin/python"
+                pip_audit_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit"
+                pip_audit_fix_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit --desc"
+            fi
+            
+            run_validation "Python dependency scan" "$pip_audit_cmd" "pip-audit" "# 1. Review vulnerabilities:\n$pip_audit_fix_cmd\n# 2. Fix automatically (but review first!):\npip-audit --fix\n# 3. Update requirements:\npip freeze > requirements.txt" || security_failed=true
+        elif command -v safety >/dev/null 2>&1; then
+            # Fallback to safety (requires registration)
+            run_validation "Python dependency scan" "safety scan" "safety" "safety scan --detailed-output && pip install --upgrade [vulnerable-packages]" || security_failed=true
+        else
+            print_warning "No Python dependency scanner available"
+            print_status "Install pip-audit: pip install pip-audit"
+        fi
     fi
     
     return $([ "$security_failed" == "false" ] && echo 0 || echo 1)
