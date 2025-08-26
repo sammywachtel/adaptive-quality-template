@@ -459,7 +459,7 @@ validate_security() {
                 pip_audit_fix_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit --desc"
             fi
             
-            run_validation "Python dependency scan" "$pip_audit_cmd" "pip-audit" "$pip_audit_fix_cmd && pip install --upgrade [vulnerable-packages]" || security_failed=true
+            run_validation "Python dependency scan" "$pip_audit_cmd" "pip-audit" "# 1. Review vulnerabilities:\n$pip_audit_fix_cmd\n# 2. Fix automatically (but review first!):\npip-audit --fix\n# 3. Update requirements:\npip freeze > requirements.txt" || security_failed=true
         elif command -v safety >/dev/null 2>&1; then
             # Fallback to safety (requires registration)
             run_validation "Python dependency scan" "safety scan" "safety" "safety scan --detailed-output && pip install --upgrade [vulnerable-packages]" || security_failed=true
