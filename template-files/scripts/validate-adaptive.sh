@@ -436,8 +436,16 @@ validate_security() {
     
     # Dependency scanning for backend  
     local has_python=$(read_config "project.structure.has_python")
-    if [[ "$has_python" == "true" ]] && command -v safety >/dev/null 2>&1; then
-        run_validation "Python dependency scan" "safety check" "safety" "safety check --full-report && pip install --upgrade [vulnerable-packages]" || security_failed=true
+    if [[ "$has_python" == "true" ]]; then
+        if command -v pip-audit >/dev/null 2>&1; then
+            run_validation "Python dependency scan" "pip-audit" "pip-audit" "pip-audit --desc && pip install --upgrade [vulnerable-packages]" || security_failed=true
+        elif command -v safety >/dev/null 2>&1; then
+            # Fallback to safety (requires registration)
+            run_validation "Python dependency scan" "safety scan" "safety" "safety scan --detailed-output && pip install --upgrade [vulnerable-packages]" || security_failed=true
+        else
+            print_warning "No Python dependency scanner available"
+            print_status "Install pip-audit: pip install pip-audit"
+        fi
     fi
     
     return $([ "$security_failed" == "false" ] && echo 0 || echo 1)
