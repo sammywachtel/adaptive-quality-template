@@ -327,10 +327,9 @@ except:
     local frontend_path=$(extract_detection_value '.project.frontend_path')
     local backend_path=$(extract_detection_value '.project.backend_path')
     
-    # Process the CI workflow template with more sophisticated replacements
+    # Process the CI workflow template with proper conditional processing
     if [[ -f "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" ]]; then
-        # Create a temporary processing script for complex template logic
-        # Use a simpler sed-based approach that works correctly
+        # First, do basic variable substitutions
         sed -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
             -e "s|{{PROJECT_TYPE}}|$(extract_detection_value '.project.type')|g" \
             -e "s|{{CURRENT_PHASE}}|$current_phase|g" \
@@ -341,35 +340,33 @@ except:
             -e "s|{{BACKEND_PATH}}|$backend_path|g" \
             "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" > .github/workflows/quality-adaptive.yml.tmp
         
-        # Process conditional blocks based on current phase
-        if [[ "$current_phase" == "0" ]]; then
-            # Phase 0: Keep baseline checks, remove higher phase blocks
-            sed -e '/{{#IF_PHASE_0}}/d' -e '/{{\/IF_PHASE_0}}/d' \
-                -e '/{{#IF_PHASE_1_OR_HIGHER}}/,/{{\/IF_PHASE_1_OR_HIGHER}}/d' \
-                -e '/{{#IF_PHASE_2_OR_HIGHER}}/,/{{\/IF_PHASE_2_OR_HIGHER}}/d' \
-                .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
-        elif [[ "$current_phase" == "1" ]]; then
-            # Phase 1: Keep phase 0 and 1+ blocks, remove 2+ blocks
-            sed -e '/{{#IF_PHASE_0}}/,/{{\/IF_PHASE_0}}/d' \
-                -e '/{{#IF_PHASE_1_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_1_OR_HIGHER}}/d' \
-                -e '/{{#IF_PHASE_2_OR_HIGHER}}/,/{{\/IF_PHASE_2_OR_HIGHER}}/d' \
-                .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
-        elif [[ "$current_phase" == "2" ]]; then
-            # Phase 2: Keep phase 0, 1+, and 2+ blocks
-            sed -e '/{{#IF_PHASE_0}}/,/{{\/IF_PHASE_0}}/d' \
-                -e '/{{#IF_PHASE_1_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_1_OR_HIGHER}}/d' \
-                -e '/{{#IF_PHASE_2_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_2_OR_HIGHER}}/d' \
-                .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
+        # Use Python script to properly process conditional blocks
+        if command -v python3 >/dev/null 2>&1; then
+            # Process conditionals first, then do variable substitutions
+            python3 "$SCRIPT_DIR/process-workflow-template.py" \
+                "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" \
+                .github/workflows/quality-adaptive.yml.processed
+            
+            # Now do the variable substitutions on the processed template
+            sed -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
+                -e "s|{{PROJECT_TYPE}}|$(extract_detection_value '.project.type')|g" \
+                -e "s|{{CURRENT_PHASE}}|$current_phase|g" \
+                -e "s|{{PHASE_DESCRIPTION}}|$phase_description|g" \
+                -e "s|{{HAS_FRONTEND}}|$has_frontend|g" \
+                -e "s|{{HAS_BACKEND}}|$has_backend|g" \
+                -e "s|{{FRONTEND_PATH}}|$frontend_path|g" \
+                -e "s|{{BACKEND_PATH}}|$backend_path|g" \
+                .github/workflows/quality-adaptive.yml.processed > .github/workflows/quality-adaptive.yml
+            
+            rm -f .github/workflows/quality-adaptive.yml.tmp .github/workflows/quality-adaptive.yml.processed
+            print_success "Adaptive CI workflow generated with proper conditional processing"
         else
-            # Phase 3 or higher: Keep all blocks
-            sed -e '/{{#IF_PHASE_0}}/,/{{\/IF_PHASE_0}}/d' \
-                -e '/{{#IF_PHASE_1_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_1_OR_HIGHER}}/d' \
-                -e '/{{#IF_PHASE_2_OR_HIGHER}}/d' -e '/{{\/IF_PHASE_2_OR_HIGHER}}/d' \
+            # Fallback: just remove all conditional markers (basic processing)
+            sed -e '/{{#IF_/d' -e '/{{\/IF_/d' \
                 .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
+            rm -f .github/workflows/quality-adaptive.yml.tmp
+            print_warning "Python not found - used basic conditional processing"
         fi
-        
-        rm -f .github/workflows/quality-adaptive.yml.tmp
-        echo "Adaptive CI workflow generated"
     else
         # Fallback to basic workflow
         cp "$TEMPLATE_DIR/.github/workflows/quality-standardized.yml" .github/workflows/ 2>/dev/null || true

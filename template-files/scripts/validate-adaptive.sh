@@ -423,9 +423,9 @@ validate_security() {
     local security_failed=false
     
     # Secret detection
-    local secret_detection=$(read_config "tools.security.secret_detection")
-    if [[ "$secret_detection" == "true" ]] && command -v detect-secrets >/dev/null 2>&1; then
-        run_validation "Secret detection" "detect-secrets scan --baseline .secrets.baseline ." "secrets" "Review detected secrets" || security_failed=true
+    local secret_detection=$(read_config "tools.security.secret_detection") # pragma: allowlist secret
+    if [[ "$secret_detection" == "true" ]] && command -v detect-secrets >/dev/null 2>&1; then  # pragma: allowlist secret
+        run_validation "Secret detection" "detect-secrets scan --baseline .secrets.baseline ." "secrets" "Review detected secrets" || security_failed=true  # pragma: allowlist secret
     fi
     
     # Dependency scanning for frontend
