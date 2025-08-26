@@ -437,7 +437,7 @@ validate_security() {
     # Dependency scanning for backend  
     local has_python=$(read_config "project.structure.has_python")
     if [[ "$has_python" == "true" ]] && command -v safety >/dev/null 2>&1; then
-        run_validation "Python dependency scan" "safety check" "safety" "Update vulnerable packages" || security_failed=true
+        run_validation "Python dependency scan" "safety check" "safety" "safety check --full-report && pip install --upgrade [vulnerable-packages]" || security_failed=true
     fi
     
     return $([ "$security_failed" == "false" ] && echo 0 || echo 1)
