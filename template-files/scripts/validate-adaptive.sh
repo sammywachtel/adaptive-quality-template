@@ -445,18 +445,18 @@ validate_security() {
             # Handle virtual environments to avoid unintuitive audits
             if [[ -n "$VIRTUAL_ENV" ]]; then
                 # Already in activated virtual environment
-                pip_audit_cmd="PIP_PYTHON=\"$VIRTUAL_ENV/bin/python\" pip-audit"
-                pip_audit_fix_cmd="PIP_PYTHON=\"$VIRTUAL_ENV/bin/python\" pip-audit --desc"
+                pip_audit_cmd="PIPAPI_PYTHON_LOCATION=\"$VIRTUAL_ENV/bin/python\" pip-audit"
+                pip_audit_fix_cmd="PIPAPI_PYTHON_LOCATION=\"$VIRTUAL_ENV/bin/python\" pip-audit --desc"
             elif [[ -f ".venv/bin/python" ]]; then
                 # Virtual environment exists but not activated
                 local venv_python="$(pwd)/.venv/bin/python"
-                pip_audit_cmd="PIP_PYTHON=\"$venv_python\" pip-audit"
-                pip_audit_fix_cmd="PIP_PYTHON=\"$venv_python\" pip-audit --desc"
+                pip_audit_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit"
+                pip_audit_fix_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit --desc"
             elif [[ -f "venv/bin/python" ]]; then
                 # Alternative venv name
                 local venv_python="$(pwd)/venv/bin/python"
-                pip_audit_cmd="PIP_PYTHON=\"$venv_python\" pip-audit"
-                pip_audit_fix_cmd="PIP_PYTHON=\"$venv_python\" pip-audit --desc"
+                pip_audit_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit"
+                pip_audit_fix_cmd="PIPAPI_PYTHON_LOCATION=\"$venv_python\" pip-audit --desc"
             fi
             
             run_validation "Python dependency scan" "$pip_audit_cmd" "pip-audit" "$pip_audit_fix_cmd && pip install --upgrade [vulnerable-packages]" || security_failed=true
