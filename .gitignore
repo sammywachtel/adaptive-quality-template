@@ -107,3 +107,6 @@ quality-reports/
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+
+# Claude Code configuration
+.claude/
