@@ -98,9 +98,14 @@ tools:
 
   # Security tools
   security:
+    enabled: true
     vulnerability_scanning: true
     secret_detection: true
     dependency_scanning: true
+
+  # Quality tooling integration
+  quality:
+    pre_commit_hooks: true
 
 # ═══════════════════════════════════════════════════════════════════════════════════════
 # TESTING CONFIGURATION (Phase-dependent requirements)

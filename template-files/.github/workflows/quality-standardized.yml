@@ -8,7 +8,6 @@ on:
 
 env:
   NODE_VERSION: '18'
-  PYTHON_VERSION: '3.11'
 
 jobs:
   frontend-quality:
@@ -53,8 +52,14 @@ jobs:
           name: frontend-coverage
 
   backend-quality:
-    name: Backend Quality Checks
+    name: Backend Quality Checks (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false  # Continue running all Python versions even if one fails
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    
     defaults:
       run:
         working-directory: ./backend
@@ -66,12 +71,13 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Install Backend Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+          pip install types-jsonschema  # Common type stubs for CI
 
       - name: Run Black Check
         run: black --check .
@@ -80,7 +86,7 @@ jobs:
         run: isort --check-only .
 
       - name: Run Flake8 Linting
-        run: flake8
+        run: flake8 . --exclude=tools/,demo/,.local_docs/
 
       - name: Run MyPy Type Checking
         run: mypy .

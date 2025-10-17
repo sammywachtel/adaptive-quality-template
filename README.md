@@ -2,9 +2,11 @@
 
 🎯 **Universal template that intelligently adapts to any project type** - TypeScript, Python, full-stack, or hybrid projects.
 
-[![Quality Gate](https://img.shields.io/badge/Quality%20Gate-Adaptive-brightgreen)](https://github.com/your-username/adaptive-quality-template)
+[![Quality Gate](https://img.shields.io/badge/Quality%20Gate-Adaptive-brightgreen)](https://github.com/sammywachtel/adaptive-quality-template)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Cross Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://github.com/your-username/adaptive-quality-template)
+[![Cross Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://github.com/sammywachtel/adaptive-quality-template)
+
+> **⚠️ Work in Progress**: This project is under active development. Features and documentation are being refined and may change.
 
 ## 🚀 Key Innovation: Smart Adaptation
 
@@ -21,11 +23,19 @@ This isn't just another template - it's an **intelligent system** that:
 ### Apply to Any Existing Project
 ```bash
 # Clone the template
-git clone https://github.com/your-username/adaptive-quality-template.git
+git clone https://github.com/sammywachtel/adaptive-quality-template.git
 cd adaptive-quality-template
 
 # Apply to any project (auto-detects type)
 ./setup-new-project.sh /path/to/your/project
+./setup-new-project.sh .                     # For current directory
+
+# With tool configuration options:
+./setup-new-project.sh /path/to/project --overwrite-tools  # Replace tool configs with template standards
+./setup-new-project.sh /path/to/project                    # Preserve existing tool configs (default)
+
+# Get help and examples:
+./setup-new-project.sh --help
 ```
 
 ### Create New Projects  
@@ -34,6 +44,93 @@ cd adaptive-quality-template
 ./create-standardized-project.sh my-app fullstack
 ./create-standardized-project.sh my-lib typescript  
 ./create-standardized-project.sh my-api python
+```
+
+## ⚙️ Python Configuration Handling
+
+The template intelligently handles existing `pyproject.toml` files with two modes:
+
+### Default: Smart Merge (Preserves Your Settings)
+```bash
+./setup-new-project.sh
+```
+**What it preserves:**
+- ✅ `[build-system]` and `[project]` sections (never touched)
+- ✅ Existing tool configurations and your custom settings
+- ✅ Custom tools like `[tool.hatch]`, `[tool.poetry]`, etc.
+
+**What it adds:**
+- ➕ Missing tool configurations (isort, coverage, etc.)
+- ➕ Additional settings for existing tools (non-conflicting)
+
+### Overwrite Mode: Standardize Tool Configs
+```bash
+./setup-new-project.sh --overwrite-tools
+```
+**What it preserves:**
+- ✅ `[build-system]` and `[project]` sections (never touched)  
+- ✅ Custom tools like `[tool.hatch]`, `[tool.poetry]`, etc.
+
+**What it replaces:**
+- 🔄 `[tool.black]`, `[tool.mypy]`, `[tool.isort]` with template standards
+- 🔄 `[tool.pytest]`, `[tool.coverage]`, `[tool.flake8]` with template standards
+
+### Example: Your File Before/After
+
+**Before (your existing pyproject.toml):**
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "my-package"
+version = "1.0.0"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = false
+```
+
+**After with default merge:**
+```toml
+[build-system]  # ✅ Preserved
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]  # ✅ Preserved
+name = "my-package"
+version = "1.0.0"
+
+[tool.mypy]  # ✅ Your settings kept, template settings added
+python_version = "3.9"        # Your setting preserved
+warn_return_any = false       # Your setting preserved
+warn_unused_configs = true    # Template setting added
+
+[tool.black]  # ➕ New from template
+line-length = 88
+target-version = ["py311"]
+```
+
+**After with --overwrite-tools:**
+```toml
+[build-system]  # ✅ Preserved
+requires = ["hatchling"] 
+build-backend = "hatchling.build"
+
+[project]  # ✅ Preserved
+name = "my-package"
+version = "1.0.0"
+
+[tool.mypy]  # 🔄 Completely replaced with template standards
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+# ... full template mypy config
+
+[tool.black]  # ➕ Added from template
+line-length = 88
+target-version = ["py311"]
 ```
 
 ## 🧠 Smart Project Detection
@@ -147,6 +244,54 @@ my-typescript-app/
 ├── src/                        # TypeScript source
 ├── .pre-commit-config.yaml    # Only TypeScript/ESLint hooks
 └── package.json              # TypeScript-focused scripts
+```
+
+## 🧠 Intelligent MyPy Dependency Detection
+
+The template automatically detects and configures MyPy type checking with project-specific dependencies:
+
+### How It Works
+```bash
+# During setup, the system scans requirements files for packages that need type stubs
+./scripts/detect-mypy-deps.sh requirements.txt
+
+# Example output for a data science project:
+# ["types-jsonschema", "numpy", "scikit-learn"]
+```
+
+### Supported Auto-Detection
+**Type Stub Packages:**
+- `requests` → `types-requests`
+- `redis` → `types-redis`
+- `pyyaml` → `types-pyyaml`
+- `jsonschema` → `types-jsonschema`
+- `setuptools` → `types-setuptools`
+
+**Scientific Computing:**
+- `numpy`, `scikit-learn`, `pandas`, `scipy` (direct dependencies)
+
+### Result: Smart Pre-commit Config
+```yaml
+# Auto-generated based on your requirements.txt
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v1.8.0
+  hooks:
+    - id: mypy
+      args: ["--config-file=pyproject.toml"]
+      additional_dependencies:
+        - types-jsonschema    # ✅ Auto-detected
+        - numpy              # ✅ Auto-detected
+        - scikit-learn       # ✅ Auto-detected
+      files: '^(src|backend|app)/.*\.py$'
+```
+
+### Manual Override
+If dependencies aren't auto-detected or you need custom packages:
+```yaml
+# Edit .pre-commit-config.yaml
+additional_dependencies:
+  - types-custom-package
+  - your-internal-library
 ```
 
 ## 📊 Configuration-Driven Behavior

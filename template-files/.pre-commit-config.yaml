@@ -42,40 +42,35 @@ repos:
         files: ^frontend/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false
 
-  # Backend Quality Gates - STRICT MODE
-  - repo: local
+  # Python Quality Gates
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
     hooks:
-      - id: python-black-check
-        name: Python Black Format Check (no auto-fix)
-        entry: bash -c 'cd backend && black --check --diff .'
-        language: system
-        files: ^backend/.*\.py$
-        pass_filenames: false
-        fail_fast: true
+      - id: black
+        language_version: python3
 
-      - id: python-isort-check
-        name: Python isort Check (no auto-fix)
-        entry: bash -c 'cd backend && isort --check-only --diff .'
-        language: system
-        files: ^backend/.*\.py$
-        pass_filenames: false
-        fail_fast: true
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
 
-      - id: python-flake8
-        name: Python flake8 Linting
-        entry: bash -c 'cd backend && flake8'
-        language: system
-        files: ^backend/.*\.py$
-        pass_filenames: false
-        fail_fast: true
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        args: ["--max-line-length=88", "--extend-ignore=E203,W503"]
+        exclude: '^(tools/|demo/|\.local_docs/)'
 
-      - id: python-mypy
-        name: Python MyPy Type Checking
-        entry: bash -c 'cd backend && mypy . --no-error-summary'
-        language: system
-        files: ^backend/.*\.py$
-        pass_filenames: false
-        fail_fast: true
+  # MyPy type checking (disabled in pre-commit by default, runs in CI)
+  # Uncomment and add project-specific dependencies as needed:
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.8.0
+  #   hooks:
+  #     - id: mypy
+  #       args: ["--config-file=pyproject.toml"]
+  #       additional_dependencies: []  # Add: types-*, numpy, scikit-learn, etc.
+  #       files: '^(src|backend)/.*\.py$'
 
   # Additional Security and Quality Checks
   - repo: https://github.com/Yelp/detect-secrets

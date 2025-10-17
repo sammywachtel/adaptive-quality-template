@@ -80,7 +80,7 @@ to_lowercase_bool() {
     [[ "$value" == "true" ]] && echo "true" || echo "false"
 }
 
-# Function to process template with substitutions
+# Enhanced template processing with phase awareness
 process_template() {
     local template_file="$1"
     local output_file="$2"
@@ -93,13 +93,48 @@ process_template() {
     local has_backend=$(to_lowercase_bool "$(extract_detection_value '.project.has_backend')")
     local has_typescript=$(to_lowercase_bool "$(extract_detection_value '.project.has_typescript')")
     local has_python=$(to_lowercase_bool "$(extract_detection_value '.project.has_python')")
+    local has_javascript=$(to_lowercase_bool "$(extract_detection_value '.project.has_javascript')")
     local has_tests=$(to_lowercase_bool "$(extract_detection_value '.project.has_tests')")
     local frontend_path=$(extract_detection_value '.project.frontend_path')
     local backend_path=$(extract_detection_value '.project.backend_path')
     local languages_json=$(echo "$PROJECT_DETECTION" | jq -c '.languages')
     local frameworks_json=$(echo "$PROJECT_DETECTION" | jq -c '.frameworks')
     
-    # Process the template file
+    # Phase-aware variables - determine initial phase and recommendation
+    local initial_phase="0"
+    local recommended_phase="0"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    # Run project analysis to get intelligent phase recommendation
+    if [[ -f "$SCRIPT_DIR/quality-gate-manager.sh" ]]; then
+        # Try to get recommended phase from analysis
+        recommended_phase=$("$SCRIPT_DIR/quality-gate-manager.sh" analyze 2>/dev/null | tail -n1 || echo "0")
+        if [[ ! "$recommended_phase" =~ ^[0-3]$ ]]; then
+            recommended_phase="0"
+        fi
+    fi
+    
+    # For new projects, we might want to start at the recommended phase
+    # For existing projects, always start at Phase 0 for safety
+    if [[ ! -f ".quality-config.yaml" ]]; then
+        # New setup - can use recommended phase as initial
+        initial_phase="$recommended_phase"
+    else
+        # Existing project - keep current phase
+        if command -v python3 >/dev/null 2>&1; then
+            initial_phase=$(python3 -c "
+import yaml
+try:
+    with open('.quality-config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(config.get('quality_gates', {}).get('current_phase', 0))
+except:
+    print(0)
+" 2>/dev/null || echo "0")
+        fi
+    fi
+    
+    # Enhanced template processing with all variables
     sed \
         -e "s|{{PROJECT_TYPE}}|$project_type|g" \
         -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
@@ -107,14 +142,26 @@ process_template() {
         -e "s|{{HAS_BACKEND}}|$has_backend|g" \
         -e "s|{{HAS_TYPESCRIPT}}|$has_typescript|g" \
         -e "s|{{HAS_PYTHON}}|$has_python|g" \
+        -e "s|{{HAS_JAVASCRIPT}}|$has_javascript|g" \
         -e "s|{{HAS_TESTS}}|$has_tests|g" \
         -e "s|{{FRONTEND_PATH}}|$frontend_path|g" \
         -e "s|{{BACKEND_PATH}}|$backend_path|g" \
         -e "s|{{LANGUAGES_JSON}}|$languages_json|g" \
         -e "s|{{FRAMEWORKS_JSON}}|$frameworks_json|g" \
+        -e "s|{{INITIAL_PHASE}}|$initial_phase|g" \
+        -e "s|{{RECOMMENDED_PHASE}}|$recommended_phase|g" \
+        -e "s|{{TIMESTAMP}}|$timestamp|g" \
         "$template_file" > "$output_file"
         
     print_success "Generated: $output_file"
+    
+    # Show phase information if this is the quality config
+    if [[ $(basename "$output_file") == ".quality-config.yaml" ]]; then
+        print_status "Phase Configuration:"
+        echo "  • Initial Phase: $initial_phase"
+        echo "  • Recommended Phase: $recommended_phase" 
+        echo "  • Project Type: $project_type"
+    fi
 }
 
 # Function to generate pre-commit configuration
@@ -178,23 +225,64 @@ EOF
     hooks:
       - id: black
         language_version: python3
-        files: '^${backend_path:-.}/.*\.py$'
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
     hooks:
       - id: isort
         args: ["--profile", "black"]
-        files: '^${backend_path:-.}/.*\.py$'
 
   - repo: https://github.com/pycqa/flake8
     rev: 7.1.1
     hooks:
       - id: flake8
         args: ["--max-line-length=88", "--extend-ignore=E203,W503"]
-        files: '^${backend_path:-.}/.*\.py$'
+        exclude: '^(tools/|demo/|\.local_docs/)'
 
 EOF
+
+        # Detect MyPy dependencies dynamically
+        if [[ -f "$SCRIPT_DIR/detect-mypy-deps.sh" ]]; then
+            local mypy_deps_json=$("$SCRIPT_DIR/detect-mypy-deps.sh" 2>/dev/null || echo "[]")
+            local deps_count=$(echo "$mypy_deps_json" | jq 'length' 2>/dev/null || echo "0")
+
+            # Only add MyPy hook if dependencies were detected
+            if [[ "$deps_count" -gt 0 ]]; then
+                print_status "Detected $deps_count MyPy dependencies - enabling MyPy hook"
+
+                # Convert JSON array to YAML array format
+                local mypy_deps_yaml=$(echo "$mypy_deps_json" | jq -r '.[]' | sed 's/^/          - /')
+
+                cat >> .pre-commit-config.yaml << EOF
+  # MyPy type checking (auto-configured based on requirements)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        args: ["--config-file=pyproject.toml"]
+        additional_dependencies:
+$mypy_deps_yaml
+        files: '^(src|backend|app)/.*\.py$'
+
+EOF
+            else
+                # Add commented MyPy hook as template for manual enabling
+                cat >> .pre-commit-config.yaml << 'EOF'
+  # MyPy type checking (disabled - no dependencies detected)
+  # Uncomment and add project-specific dependencies as needed:
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.8.0
+  #   hooks:
+  #     - id: mypy
+  #       args: ["--config-file=pyproject.toml"]
+  #       additional_dependencies: []  # Add: types-*, numpy, scikit-learn, etc.
+  #       files: '^(src|backend|app)/.*\.py$'
+
+EOF
+            fi
+        else
+            print_warning "MyPy dependency detection script not found"
+        fi
     fi
 
     # Add security hooks
@@ -290,9 +378,9 @@ generate_package_scripts() {
     fi
 }
 
-# Function to generate CI workflow
+# Advanced phase-aware CI/CD workflow generation
 generate_ci_workflow() {
-    print_status "Generating adaptive CI/CD workflow..."
+    print_status "Generating phase-aware CI/CD workflow..."
     
     # Create .github/workflows directory
     mkdir -p .github/workflows
@@ -300,6 +388,7 @@ generate_ci_workflow() {
     # Get current phase and project information
     local current_phase="0"
     local phase_description="Baseline & Stabilization"
+    local recommended_phase="0"
     
     if [[ -f ".quality-config.yaml" ]]; then
         current_phase=$(python3 -c "
@@ -311,66 +400,311 @@ try:
 except:
     print(0)
 " 2>/dev/null || echo "0")
+
+        recommended_phase=$(python3 -c "
+import yaml
+try:
+    with open('.quality-config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(config.get('quality_gates', {}).get('recommended_phase', 0))
+except:
+    print(0)
+" 2>/dev/null || echo "0")
     fi
     
-    # Set phase description
+    # Set phase description and get current timestamp
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     case "$current_phase" in
         "0") phase_description="Baseline & Stabilization" ;;
         "1") phase_description="Changed-Code-Only Enforcement" ;;
-        "2") phase_description="Ratchet & Expand Scope" ;;
-        "3") phase_description="Normalize & Harden" ;;
+        "2") phase_description="Repository-Wide + Ratcheting" ;;
+        "3") phase_description="Full Strict Enforcement" ;;
     esac
     
+    print_status "Current phase: $current_phase ($phase_description)"
+    
     # Get project detection values for workflow generation
+    local project_type=$(extract_detection_value '.project.type')
     local has_frontend=$(extract_detection_value '.project.has_frontend')
     local has_backend=$(extract_detection_value '.project.has_backend')
+    local has_typescript=$(extract_detection_value '.project.has_typescript')
+    local has_python=$(extract_detection_value '.project.has_python')
     local frontend_path=$(extract_detection_value '.project.frontend_path')
     local backend_path=$(extract_detection_value '.project.backend_path')
     
-    # Process the CI workflow template with proper conditional processing
-    if [[ -f "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" ]]; then
-        # First, do basic variable substitutions
-        sed -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
-            -e "s|{{PROJECT_TYPE}}|$(extract_detection_value '.project.type')|g" \
-            -e "s|{{CURRENT_PHASE}}|$current_phase|g" \
-            -e "s|{{PHASE_DESCRIPTION}}|$phase_description|g" \
-            -e "s|{{HAS_FRONTEND}}|$has_frontend|g" \
-            -e "s|{{HAS_BACKEND}}|$has_backend|g" \
-            -e "s|{{FRONTEND_PATH}}|$frontend_path|g" \
-            -e "s|{{BACKEND_PATH}}|$backend_path|g" \
-            "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" > .github/workflows/quality-adaptive.yml.tmp
+    # Choose the appropriate workflow template based on phase
+    local workflow_template=""
+    local workflow_name=""
+    
+    # Phase-specific workflow selection
+    case "$current_phase" in
+        "0")
+            workflow_template="quality-adaptive-phase0.yml.template"
+            workflow_name="quality-adaptive-phase0.yml"
+            ;;
+        "1") 
+            workflow_template="quality-adaptive-phase1.yml.template"
+            workflow_name="quality-adaptive-phase1.yml"
+            ;;
+        "2")
+            workflow_template="quality-adaptive-phase2.yml.template" 
+            workflow_name="quality-adaptive-phase2.yml"
+            ;;
+        "3")
+            workflow_template="quality-adaptive-phase3.yml.template"
+            workflow_name="quality-adaptive-phase3.yml"
+            ;;
+        *)
+            workflow_template="quality-adaptive.yml.template"
+            workflow_name="quality-adaptive.yml"
+            ;;
+    esac
+    
+    # Generate the main adaptive workflow
+    local template_found=false
+    
+    # Try phase-specific template first
+    if [[ -f "$TEMPLATE_DIR/.github/workflows/$workflow_template" ]]; then
+        template_found=true
+        print_status "Using phase-specific template: $workflow_template"
         
-        # Use Python script to properly process conditional blocks
-        if command -v python3 >/dev/null 2>&1; then
-            # Process conditionals first, then do variable substitutions
-            python3 "$SCRIPT_DIR/process-workflow-template.py" \
-                "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" \
-                .github/workflows/quality-adaptive.yml.processed
-            
-            # Now do the variable substitutions on the processed template
-            sed -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
-                -e "s|{{PROJECT_TYPE}}|$(extract_detection_value '.project.type')|g" \
-                -e "s|{{CURRENT_PHASE}}|$current_phase|g" \
-                -e "s|{{PHASE_DESCRIPTION}}|$phase_description|g" \
-                -e "s|{{HAS_FRONTEND}}|$has_frontend|g" \
-                -e "s|{{HAS_BACKEND}}|$has_backend|g" \
-                -e "s|{{FRONTEND_PATH}}|$frontend_path|g" \
-                -e "s|{{BACKEND_PATH}}|$backend_path|g" \
-                .github/workflows/quality-adaptive.yml.processed > .github/workflows/quality-adaptive.yml
-            
-            rm -f .github/workflows/quality-adaptive.yml.tmp .github/workflows/quality-adaptive.yml.processed
-            print_success "Adaptive CI workflow generated with proper conditional processing"
+        # Process the phase-specific template
+        process_phase_workflow_template "$TEMPLATE_DIR/.github/workflows/$workflow_template" ".github/workflows/$workflow_name"
+    fi
+    
+    # Fallback to master adaptive template
+    if [[ $template_found == false && -f "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" ]]; then
+        template_found=true 
+        print_status "Using master adaptive template with phase conditionals"
+        
+        # Process the master template with phase-aware conditionals
+        process_master_adaptive_template "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" ".github/workflows/quality-adaptive.yml"
+    fi
+    
+    # Last fallback to basic workflow
+    if [[ $template_found == false ]]; then
+        if [[ -f "$TEMPLATE_DIR/.github/workflows/quality-standardized.yml" ]]; then
+            cp "$TEMPLATE_DIR/.github/workflows/quality-standardized.yml" .github/workflows/
+            print_warning "Using fallback standardized workflow template"
         else
-            # Fallback: just remove all conditional markers (basic processing)
-            sed -e '/{{#IF_/d' -e '/{{\/IF_/d' \
-                .github/workflows/quality-adaptive.yml.tmp > .github/workflows/quality-adaptive.yml
-            rm -f .github/workflows/quality-adaptive.yml.tmp
-            print_warning "Python not found - used basic conditional processing"
+            # Generate a basic workflow from scratch
+            generate_basic_workflow ".github/workflows/quality-basic.yml"
+            print_warning "Generated basic workflow - no templates found"
         fi
+    fi
+    
+    # Clean up any old workflow files if we're switching phases
+    cleanup_old_workflow_files "$workflow_name"
+}
+
+# Function to process phase-specific workflow templates
+process_phase_workflow_template() {
+    local template_file="$1"
+    local output_file="$2"
+    
+    # Get all necessary variables for substitution
+    local project_type=$(extract_detection_value '.project.type')
+    local has_frontend=$(extract_detection_value '.project.has_frontend')
+    local has_backend=$(extract_detection_value '.project.has_backend') 
+    local has_typescript=$(extract_detection_value '.project.has_typescript')
+    local has_python=$(extract_detection_value '.project.has_python')
+    local has_tests=$(extract_detection_value '.project.has_tests')
+    local frontend_path=$(extract_detection_value '.project.frontend_path')
+    local backend_path=$(extract_detection_value '.project.backend_path')
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    # Get current phase info
+    local current_phase="0"
+    local recommended_phase="0"
+    if [[ -f ".quality-config.yaml" ]]; then
+        current_phase=$(python3 -c "import yaml; print(yaml.safe_load(open('.quality-config.yaml')).get('quality_gates', {}).get('current_phase', 0))" 2>/dev/null || echo "0")
+        recommended_phase=$(python3 -c "import yaml; print(yaml.safe_load(open('.quality-config.yaml')).get('quality_gates', {}).get('recommended_phase', 0))" 2>/dev/null || echo "0")
+    fi
+    
+    # Perform comprehensive variable substitution
+    sed -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
+        -e "s|{{PROJECT_TYPE}}|$project_type|g" \
+        -e "s|{{CURRENT_PHASE}}|$current_phase|g" \
+        -e "s|{{RECOMMENDED_PHASE}}|$recommended_phase|g" \
+        -e "s|{{TIMESTAMP}}|$timestamp|g" \
+        -e "s|{{HAS_FRONTEND}}|$has_frontend|g" \
+        -e "s|{{HAS_BACKEND}}|$has_backend|g" \
+        -e "s|{{HAS_TYPESCRIPT}}|$has_typescript|g" \
+        -e "s|{{HAS_PYTHON}}|$has_python|g" \
+        -e "s|{{HAS_TESTS}}|$has_tests|g" \
+        -e "s|{{FRONTEND_PATH}}|$frontend_path|g" \
+        -e "s|{{BACKEND_PATH}}|$backend_path|g" \
+        "$template_file" > "$output_file"
+        
+    print_success "Generated phase-aware workflow: $output_file"
+}
+
+# Function to process master adaptive template with phase conditionals
+process_master_adaptive_template() {
+    local template_file="$1" 
+    local output_file="$2"
+    
+    # Get current phase
+    local current_phase="0"
+    if [[ -f ".quality-config.yaml" ]]; then
+        current_phase=$(python3 -c "import yaml; print(yaml.safe_load(open('.quality-config.yaml')).get('quality_gates', {}).get('current_phase', 0))" 2>/dev/null || echo "0")
+    fi
+    
+    print_status "Processing master template for Phase $current_phase..."
+    
+    # Use Python for sophisticated template processing with conditionals
+    python3 << EOF
+import re
+import sys
+
+# Read template
+try:
+    with open("$template_file", 'r') as f:
+        content = f.read()
+except Exception as e:
+    print(f"Error reading template: {e}")
+    sys.exit(1)
+
+current_phase = $current_phase
+
+# Process phase conditionals
+def process_conditionals(content, phase):
+    # Process {{#IF_PHASE_X}} ... {{/IF_PHASE_X}} blocks
+    for p in range(4):  # Phases 0-3
+        pattern = f'{{{{#IF_PHASE_{p}}}}}(.*?){{{{/IF_PHASE_{p}}}}}'
+        if p == phase:
+            # Keep content for current phase
+            content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
+        else:
+            # Remove content for other phases  
+            content = re.sub(pattern, '', content, flags=re.DOTALL)
+    
+    # Process {{#IF_PHASE_GTE_X}} (greater than or equal) blocks
+    for p in range(4):
+        pattern = f'{{{{#IF_PHASE_GTE_{p}}}}}(.*?){{{{/IF_PHASE_GTE_{p}}}}}'
+        if phase >= p:
+            content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
+        else:
+            content = re.sub(pattern, '', content, flags=re.DOTALL)
+    
+    # Process {{#IF_PHASE_LTE_X}} (less than or equal) blocks
+    for p in range(4):
+        pattern = f'{{{{#IF_PHASE_LTE_{p}}}}}(.*?){{{{/IF_PHASE_LTE_{p}}}}}'
+        if phase <= p:
+            content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
+        else:
+            content = re.sub(pattern, '', content, flags=re.DOTALL)
+    
+    return content
+
+# Process the template
+processed_content = process_conditionals(content, current_phase)
+
+# Write processed template
+try:
+    with open("${output_file}.tmp", 'w') as f:
+        f.write(processed_content)
+    print("✅ Template conditionals processed successfully")
+except Exception as e:
+    print(f"❌ Error writing processed template: {e}")
+    sys.exit(1)
+EOF
+    
+    if [[ $? -eq 0 ]]; then
+        # Now do variable substitutions on the processed template
+        process_phase_workflow_template "${output_file}.tmp" "$output_file"
+        rm -f "${output_file}.tmp"
     else
-        # Fallback to basic workflow
-        cp "$TEMPLATE_DIR/.github/workflows/quality-standardized.yml" .github/workflows/ 2>/dev/null || true
-        print_warning "Using fallback CI workflow template"
+        # Fallback to simple substitution
+        print_warning "Python conditional processing failed - using simple substitution"
+        process_phase_workflow_template "$template_file" "$output_file"
+    fi
+}
+
+# Function to generate a basic workflow when no templates are found
+generate_basic_workflow() {
+    local output_file="$1"
+    
+    local project_type=$(extract_detection_value '.project.type')
+    local has_frontend=$(extract_detection_value '.project.has_frontend')
+    local has_backend=$(extract_detection_value '.project.has_backend')
+    
+    cat > "$output_file" << EOF
+# Auto-generated Basic Quality Workflow
+# Project: $PROJECT_NAME ($project_type)
+# Generated: $(date '+%Y-%m-%d %H:%M:%S')
+
+name: Quality Gates (Basic)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+    name: Quality Validation
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Setup Environment
+        uses: actions/setup-node@v4
+        if: $has_frontend == 'true'
+        with:
+          node-version: 20
+          cache: 'npm'
+          
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        if: $has_backend == 'true'
+        with:
+          python-version: 3.11
+          
+      - name: Install Dependencies
+        run: |
+          pip install pre-commit
+          pre-commit install-hooks
+          
+      - name: Run Quality Checks
+        run: |
+          if [[ -f "./scripts/validate-adaptive.sh" ]]; then
+            ./scripts/validate-adaptive.sh
+          else
+            pre-commit run --all-files
+          fi
+EOF
+
+    print_success "Generated basic quality workflow"
+}
+
+# Function to clean up old workflow files when switching phases
+cleanup_old_workflow_files() {
+    local current_workflow="$1"
+    
+    # List of potential old workflow files
+    local old_workflows=(
+        "quality-adaptive.yml"
+        "quality-adaptive-phase0.yml"
+        "quality-adaptive-phase1.yml"
+        "quality-adaptive-phase2.yml" 
+        "quality-adaptive-phase3.yml"
+        "quality-basic.yml"
+    )
+    
+    local cleaned=false
+    for workflow in "${old_workflows[@]}"; do
+        if [[ "$workflow" != "$current_workflow" && -f ".github/workflows/$workflow" ]]; then
+            rm -f ".github/workflows/$workflow"
+            cleaned=true
+        fi
+    done
+    
+    if [[ $cleaned == true ]]; then
+        print_status "Cleaned up old workflow files"
     fi
 }
 
