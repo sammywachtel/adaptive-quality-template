@@ -95,6 +95,30 @@ is_tool_enabled() {
     esac
 }
 
+# Function to check if a tool should enforce in the current phase
+should_enforce_tool() {
+    local tool_path="$1"
+    local current_phase="$CURRENT_PHASE"
+
+    # Check if tool is enabled first
+    local enabled=$(is_tool_enabled "$tool_path")
+    if [[ "$enabled" != "true" ]]; then
+        echo "disabled"
+        return
+    fi
+
+    # Check phase-specific enforcement
+    local phase_enforce=$(read_config "${tool_path}.phase_${current_phase}_enforce")
+    if [[ "$phase_enforce" == "true" ]]; then
+        echo "enforce"
+    elif [[ "$phase_enforce" == "false" ]]; then
+        echo "warning"
+    else
+        # Default: enforce if enabled
+        echo "enforce"
+    fi
+}
+
 # Function to record validation result
 record_result() {
     local tool="$1"
@@ -405,10 +429,24 @@ validate_backend() {
             run_phase_validation "Flake8 linting" "flake8 ." "flake8" "flake8 . --show-source" "\.py$" || backend_failed=true
         fi
 
-        # MyPy type checking (if enabled)
-        local mypy_enabled=$(read_config "tools.backend.python.mypy.enabled")
-        if [[ "$mypy_enabled" == "true" ]] && command -v mypy >/dev/null 2>&1; then
-            run_validation "MyPy type checking" "mypy ." "mypy" "mypy . --show-error-codes" || backend_failed=true
+        # MyPy type checking (phase-aware enforcement)
+        local mypy_enforcement=$(should_enforce_tool "tools.backend.python.mypy")
+        if [[ "$mypy_enforcement" != "disabled" ]] && command -v mypy >/dev/null 2>&1; then
+            if [[ "$mypy_enforcement" == "warning" ]]; then
+                # Run mypy but don't fail on errors in Phase 0
+                print_status "Running MyPy type checking (warnings only, Phase $CURRENT_PHASE)..."
+                if mypy . >/dev/null 2>&1; then
+                    print_success "MyPy type checking - PASSED"
+                    record_result "mypy" "PASSED" "MyPy type checking"
+                else
+                    print_warning "MyPy type checking - Issues found (not blocking in Phase $CURRENT_PHASE)"
+                    print_status "Fix with: mypy . --show-error-codes"
+                    record_result "mypy" "WARNING" "MyPy type checking (not enforced)"
+                fi
+            else
+                # Enforce mypy errors in Phase 1+
+                run_validation "MyPy type checking" "mypy ." "mypy" "mypy . --show-error-codes" || backend_failed=true
+            fi
         fi
 
         # Backend tests
