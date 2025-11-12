@@ -71,6 +71,9 @@ try:
     value = config
     for k in keys:
         value = value.get(k, {})
+    # Convert Python booleans to lowercase strings for bash compatibility
+    if isinstance(value, bool):
+        value = str(value).lower()
     print(value if value != {} else '$default_value')
 except:
     print('$default_value')
