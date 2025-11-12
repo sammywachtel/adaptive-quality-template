@@ -140,6 +140,7 @@ setup_adaptive_configuration() {
     cp "$TEMPLATE_DIR/scripts/detect-project-type.sh" scripts/
     cp "$TEMPLATE_DIR/scripts/generate-config.sh" scripts/
     cp "$TEMPLATE_DIR/scripts/validate-adaptive.sh" scripts/
+    cp "$TEMPLATE_DIR/scripts/quality-gate-manager.sh" scripts/
     chmod +x scripts/*.sh
     print_status "✓ Copied adaptive scripts"
     
