@@ -852,7 +852,9 @@ establish_baseline() {
     print_info "💾 Updating baseline configuration..."
     
     # Use Python to update the YAML with baseline data
-    python3 << EOF 2>/dev/null || python << EOF 2>/dev/null
+    # Try python3 first, fall back to python
+    if command -v python3 >/dev/null 2>&1; then
+        python3 << 'EOF'
 import yaml
 import sys
 import os
@@ -915,7 +917,75 @@ except Exception as e:
     print(f"❌ Error saving baseline: {e}")
     sys.exit(1)
 EOF
-    
+    elif command -v python >/dev/null 2>&1; then
+        python << 'EOF'
+import yaml
+import sys
+import os
+
+config_file = "$QUALITY_CONFIG_FILE"
+if not os.path.exists(config_file):
+    print("Warning: .quality-config.yaml not found, creating basic structure")
+    config = {
+        'quality_gates': {'current_phase': 0},
+        'baseline': {}
+    }
+else:
+    try:
+        with open(config_file, 'r') as f:
+            config = yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"Warning: Could not parse existing config: {e}")
+        config = {'quality_gates': {'current_phase': 0}}
+
+# Ensure baseline section exists
+if 'baseline' not in config:
+    config['baseline'] = {}
+
+# Update baseline with captured metrics
+config['baseline'] = {
+    'established_date': '$baseline_date',
+    'initial_metrics': {
+        'total_files': $total_files,
+        'python_files': $python_files,
+        'typescript_files': $ts_files,
+        'javascript_files': $js_files,
+        'test_files': $test_files,
+        'typing_coverage': $typing_coverage if '$python_files' != '0' else 0,
+        'total_quality_issues': $total_issues,
+        'frontend_errors': {
+            'typescript': $ts_errors,
+            'eslint': $eslint_errors
+        },
+        'backend_errors': {
+            'flake8': $flake8_errors,
+            'mypy': $mypy_errors
+        },
+        'security_issues': $security_issues,
+        'test_coverage': $test_coverage
+    },
+    'regression_thresholds': {
+        'max_additional_errors': 0,  # No new errors allowed
+        'min_test_coverage': $test_coverage,
+        'allow_temporary_regressions': False
+    },
+    'baseline_validation_passed': $(if "$SCRIPT_DIR/validate-adaptive.sh" >/dev/null 2>&1; then echo "True"; else echo "False"; fi)
+}
+
+# Write updated config
+try:
+    with open(config_file, 'w') as f:
+        yaml.dump(config, f, default_flow_style=False, indent=2, sort_keys=False)
+    print("✅ Baseline metrics saved to .quality-config.yaml")
+except Exception as e:
+    print(f"❌ Error saving baseline: {e}")
+    sys.exit(1)
+EOF
+    else
+        print_error "Python not found - cannot update baseline configuration"
+        return 1
+    fi
+
     local python_result=$?
     
     if [[ $python_result -eq 0 ]]; then
