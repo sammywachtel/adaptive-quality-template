@@ -104,15 +104,12 @@ process_template() {
     local initial_phase="0"
     local recommended_phase="0"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    # Run project analysis to get intelligent phase recommendation
-    if [[ -f "$SCRIPT_DIR/quality-gate-manager.sh" ]]; then
-        # Try to get recommended phase from analysis
-        recommended_phase=$("$SCRIPT_DIR/quality-gate-manager.sh" analyze 2>/dev/null | tail -n1 || echo "0")
-        if [[ ! "$recommended_phase" =~ ^[0-3]$ ]]; then
-            recommended_phase="0"
-        fi
-    fi
+
+    # Skip expensive project analysis during initial setup to avoid hangs on large projects
+    # The analyze command runs flake8, tsc, and eslint which can take minutes on large codebases
+    # Users can run analysis later with: ./scripts/quality-gate-manager.sh analyze
+    # For initial setup, always use Phase 0 (baseline mode)
+    print_status "Using Phase 0 (Baseline Mode) for initial setup"
     
     # For new projects, we might want to start at the recommended phase
     # For existing projects, always start at Phase 0 for safety
