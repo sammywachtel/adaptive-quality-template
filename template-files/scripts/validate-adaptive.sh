@@ -362,7 +362,14 @@ validate_frontend() {
     local testing_enabled=$(read_config "tools.frontend.testing.unit_tests")
     if [[ "$testing_enabled" == "true" ]]; then
         if [[ -f "package.json" ]] && (npm list jest >/dev/null 2>&1 || npm list vitest >/dev/null 2>&1); then
-            run_validation "Frontend tests" "npm test -- --run --passWithNoTests" "frontend-tests" "npm test -- --verbose" || frontend_failed=true
+            # Detect test framework and use appropriate flags
+            if npm list jest >/dev/null 2>&1; then
+                # Jest uses --watchAll=false for non-interactive mode
+                run_validation "Frontend tests" "npm test -- --watchAll=false --passWithNoTests" "frontend-tests" "npm test -- --verbose" || frontend_failed=true
+            else
+                # Vitest uses --run for non-interactive mode
+                run_validation "Frontend tests" "npm test -- --run --passWithNoTests" "frontend-tests" "npm test -- --verbose" || frontend_failed=true
+            fi
         else
             print_skip "Frontend tests not configured"
         fi

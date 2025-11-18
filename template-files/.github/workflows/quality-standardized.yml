@@ -76,8 +76,24 @@ jobs:
       - name: Install Backend Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install types-jsonschema  # Common type stubs for CI
+
+          # Install main dependencies if they exist
+          if [[ -f requirements.txt ]]; then
+            echo "📦 Installing main dependencies from requirements.txt"
+            pip install -r requirements.txt
+          fi
+
+          # Install dev dependencies if they exist
+          if [[ -f requirements-dev.txt ]]; then
+            echo "📦 Installing development dependencies from requirements-dev.txt"
+            pip install -r requirements-dev.txt
+          else
+            echo "⚠️  No requirements-dev.txt found, installing quality tools manually"
+            pip install black isort flake8 mypy pytest pytest-cov
+          fi
+
+          # Install common type stubs for MyPy
+          pip install types-jsonschema || echo "⚠️  types-jsonschema not available, skipping"
 
       - name: Run Black Check
         run: black --check .

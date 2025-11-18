@@ -243,7 +243,7 @@ EOF
             local mypy_deps_json=$("$SCRIPT_DIR/detect-mypy-deps.sh" 2>/dev/null || echo "[]")
             local deps_count=$(echo "$mypy_deps_json" | jq 'length' 2>/dev/null || echo "0")
 
-            # Only add MyPy hook if dependencies were detected
+            # Always enable MyPy for Python projects to match CI behavior
             if [[ "$deps_count" -gt 0 ]]; then
                 print_status "Detected $deps_count MyPy dependencies - enabling MyPy hook"
 
@@ -252,8 +252,9 @@ EOF
 
                 cat >> .pre-commit-config.yaml << EOF
   # MyPy type checking (auto-configured based on requirements)
+  # Note: Enabled by default to match CI behavior
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    rev: v1.13.0
     hooks:
       - id: mypy
         args: ["--config-file=pyproject.toml"]
@@ -263,17 +264,19 @@ $mypy_deps_yaml
 
 EOF
             else
-                # Add commented MyPy hook as template for manual enabling
+                # Enable MyPy but with empty dependencies (user must add manually)
+                print_status "No MyPy dependencies auto-detected - enabling with empty dependencies"
                 cat >> .pre-commit-config.yaml << 'EOF'
-  # MyPy type checking (disabled - no dependencies detected)
-  # Uncomment and add project-specific dependencies as needed:
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.8.0
-  #   hooks:
-  #     - id: mypy
-  #       args: ["--config-file=pyproject.toml"]
-  #       additional_dependencies: []  # Add: types-*, numpy, scikit-learn, etc.
-  #       files: '^(src|backend|app)/.*\.py$'
+  # MyPy type checking
+  # Note: Enabled by default to match CI behavior. Add project-specific dependencies below.
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        args: ["--config-file=pyproject.toml"]
+        additional_dependencies: []
+        # Common dependencies to add: pydantic, fastapi, httpx, types-*, numpy, etc.
+        files: '^(src|backend|app)/.*\.py$'
 
 EOF
             fi

@@ -39,10 +39,18 @@ needs_type_stub() {
 }
 
 # Function to check if package is a direct MyPy dependency
+# MyPy needs these packages installed to properly type-check code that imports them
 is_direct_dep() {
     local pkg="$1"
     case "$pkg" in
+        # Scientific packages
         numpy|scikit-learn|pandas|scipy) echo "$pkg" ;;
+        # Web frameworks (needed for type checking)
+        pydantic|pydantic-settings) echo "$pkg" ;;
+        fastapi|starlette) echo "$pkg" ;;
+        # Common libraries MyPy needs for type checking
+        httpx) echo "$pkg" ;;
+        python-dotenv) echo "$pkg" ;;
         *) echo "" ;;
     esac
 }

@@ -73,15 +73,16 @@ repos:
         args: ["--max-line-length=88", "--extend-ignore=E203,W503,E501,C901"]
         exclude: '^(tools/|demo/|\.local_docs/)'
 
-  # MyPy type checking (disabled in pre-commit by default, runs in CI)
-  # Uncomment and add project-specific dependencies as needed:
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.8.0
-  #   hooks:
-  #     - id: mypy
-  #       args: ["--config-file=pyproject.toml"]
-  #       additional_dependencies: []  # Add: types-*, numpy, scikit-learn, etc.
-  #       files: '^(src|backend)/.*\.py$'
+  # MyPy type checking
+  # Note: Enabled by default to match CI behavior. Add project-specific dependencies below.
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        args: ["--config-file=pyproject.toml"]
+        additional_dependencies: []
+        # Common dependencies to add: pydantic, fastapi, httpx, types-*, numpy, etc.
+        files: '^(src|backend|app)/.*\.py$'
 
   # Additional Security and Quality Checks
   - repo: https://github.com/Yelp/detect-secrets
