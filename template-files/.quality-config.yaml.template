@@ -71,6 +71,8 @@ tools:
       phase_1_enforce: true       # New files only
       phase_2_enforce: true       # Repository-wide
       phase_3_enforce: true       # Maximum strictness
+    testing:
+      unit_tests: {{HAS_FRONTEND}}  # Enable test execution in validation
 
   # Backend tools (enabled if Python detected)  
   backend:
@@ -89,12 +91,14 @@ tools:
         max_line_length: 88
         extend_ignore: ["E203", "W503"]
       mypy:
-        enabled: false            # Start disabled, enable in Phase 1+
-        phase_0_enforce: false    # Disabled initially
+        enabled: {{HAS_PYTHON}}   # Auto-enabled for Python projects
+        phase_0_enforce: false    # Not enforced initially (warnings only)
         phase_1_enforce: true     # New/changed files only
         phase_2_enforce: true     # Repository-wide
         phase_3_enforce: true     # Maximum strictness
         ignore_missing_imports: true
+    testing:
+      unit_tests: {{HAS_PYTHON}}  # Enable test execution in validation
 
   # Security tools
   security:

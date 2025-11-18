@@ -15,7 +15,7 @@ jobs:
       fail-fast: false  # Continue running all matrix jobs even if one fails
       matrix:
         node-version: [20]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12']
 
     steps:
     - name: Checkout code
@@ -40,11 +40,34 @@ jobs:
       run: cd frontend && npm ci
 
     - name: Install backend dependencies
-      if: ${{ hashFiles('backend/requirements.txt') != '' }}
+      if: ${{ hashFiles('backend/requirements.txt') != '' || hashFiles('requirements.txt') != '' }}
       run: |
-        cd backend
-        pip install -r requirements.txt
-        pip install black isort flake8 mypy
+        # Detect backend directory location
+        if [[ -f backend/requirements.txt ]]; then
+          BACKEND_DIR="backend"
+        elif [[ -f requirements.txt ]]; then
+          BACKEND_DIR="."
+        else
+          echo "No requirements.txt found, skipping backend dependencies"
+          exit 0
+        fi
+
+        cd "$BACKEND_DIR"
+
+        # Install main dependencies
+        if [[ -f requirements.txt ]]; then
+          pip install -r requirements.txt
+        fi
+
+        # Install dev dependencies if they exist
+        if [[ -f requirements-dev.txt ]]; then
+          echo "📦 Installing development dependencies from requirements-dev.txt"
+          pip install -r requirements-dev.txt
+        else
+          # Fallback: install quality tools manually if no requirements-dev.txt
+          echo "⚠️  No requirements-dev.txt found, installing quality tools manually"
+          pip install black isort flake8 mypy pytest pytest-cov
+        fi
 
     - name: Install quality tools
       run: |

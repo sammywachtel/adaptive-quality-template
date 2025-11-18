@@ -104,15 +104,12 @@ process_template() {
     local initial_phase="0"
     local recommended_phase="0"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    # Run project analysis to get intelligent phase recommendation
-    if [[ -f "$SCRIPT_DIR/quality-gate-manager.sh" ]]; then
-        # Try to get recommended phase from analysis
-        recommended_phase=$("$SCRIPT_DIR/quality-gate-manager.sh" analyze 2>/dev/null | tail -n1 || echo "0")
-        if [[ ! "$recommended_phase" =~ ^[0-3]$ ]]; then
-            recommended_phase="0"
-        fi
-    fi
+
+    # Skip expensive project analysis during initial setup to avoid hangs on large projects
+    # The analyze command runs flake8, tsc, and eslint which can take minutes on large codebases
+    # Users can run analysis later with: ./scripts/quality-gate-manager.sh analyze
+    # For initial setup, always use Phase 0 (baseline mode)
+    print_status "Using Phase 0 (Baseline Mode) for initial setup"
     
     # For new projects, we might want to start at the recommended phase
     # For existing projects, always start at Phase 0 for safety
@@ -246,7 +243,19 @@ EOF
             local mypy_deps_json=$("$SCRIPT_DIR/detect-mypy-deps.sh" 2>/dev/null || echo "[]")
             local deps_count=$(echo "$mypy_deps_json" | jq 'length' 2>/dev/null || echo "0")
 
-            # Only add MyPy hook if dependencies were detected
+            # Detect pyproject.toml location for MyPy config
+            local mypy_config_arg=""
+            if [[ -f "pyproject.toml" ]]; then
+                mypy_config_arg='["--config-file=pyproject.toml"]'
+            elif [[ -f "backend/pyproject.toml" ]]; then
+                mypy_config_arg='["--config-file=backend/pyproject.toml"]'
+            elif [[ -f "src/pyproject.toml" ]]; then
+                mypy_config_arg='["--config-file=src/pyproject.toml"]'
+            else
+                mypy_config_arg='[]'  # Let MyPy find config automatically
+            fi
+
+            # Always enable MyPy for Python projects to match CI behavior
             if [[ "$deps_count" -gt 0 ]]; then
                 print_status "Detected $deps_count MyPy dependencies - enabling MyPy hook"
 
@@ -255,28 +264,31 @@ EOF
 
                 cat >> .pre-commit-config.yaml << EOF
   # MyPy type checking (auto-configured based on requirements)
+  # Note: Enabled by default to match CI behavior
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    rev: v1.13.0
     hooks:
       - id: mypy
-        args: ["--config-file=pyproject.toml"]
+        args: $mypy_config_arg
         additional_dependencies:
 $mypy_deps_yaml
         files: '^(src|backend|app)/.*\.py$'
 
 EOF
             else
-                # Add commented MyPy hook as template for manual enabling
-                cat >> .pre-commit-config.yaml << 'EOF'
-  # MyPy type checking (disabled - no dependencies detected)
-  # Uncomment and add project-specific dependencies as needed:
-  # - repo: https://github.com/pre-commit/mirrors-mypy
-  #   rev: v1.8.0
-  #   hooks:
-  #     - id: mypy
-  #       args: ["--config-file=pyproject.toml"]
-  #       additional_dependencies: []  # Add: types-*, numpy, scikit-learn, etc.
-  #       files: '^(src|backend|app)/.*\.py$'
+                # Enable MyPy but with empty dependencies (user must add manually)
+                print_status "No MyPy dependencies auto-detected - enabling with empty dependencies"
+                cat >> .pre-commit-config.yaml << EOF
+  # MyPy type checking
+  # Note: Enabled by default to match CI behavior. Add project-specific dependencies below.
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        args: $mypy_config_arg
+        additional_dependencies: []
+        # Common dependencies to add: pydantic, fastapi, httpx, types-*, numpy, etc.
+        files: '^(src|backend|app)/.*\.py$'
 
 EOF
             fi

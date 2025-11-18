@@ -53,9 +53,9 @@ jobs:
       - name: Detect Project Structure
         id: detect
         run: |
-          chmod +x ./scripts/detect-project-type.sh
-          ./scripts/detect-project-type.sh json > detection.json
-          
+          chmod +x ./template-files/scripts/detect-project-type.sh
+          ./template-files/scripts/detect-project-type.sh json > detection.json
+
           echo "has-frontend=$(jq -r '.project.has_frontend' detection.json)" >> $GITHUB_OUTPUT
           echo "has-backend=$(jq -r '.project.has_backend' detection.json)" >> $GITHUB_OUTPUT
           echo "frontend-path=$(jq -r '.project.frontend_path' detection.json)" >> $GITHUB_OUTPUT
@@ -138,10 +138,10 @@ jobs:
 
           echo ""
           echo "🛠️  Local Fix Instructions:"
-          echo "• Run validation: ./scripts/validate-adaptive.sh"
-          echo "• Fix issues: npm run lint:fix && ./scripts/format-backend.sh"
-          echo "• Check phase: ./scripts/quality-gate-manager.sh status"
-          echo "• Phase help: ./scripts/quality-gate-manager.sh help"
+          echo "• Run validation: ./template-files/scripts/validate-adaptive.sh"
+          echo "• Fix issues: npm run lint:fix"
+          echo "• Check phase: ./template-files/scripts/quality-gate-manager.sh status"
+          echo "• Phase help: ./template-files/scripts/quality-gate-manager.sh help"
 
           # Check if critical jobs failed
           FAILED=false
