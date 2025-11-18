@@ -243,6 +243,18 @@ EOF
             local mypy_deps_json=$("$SCRIPT_DIR/detect-mypy-deps.sh" 2>/dev/null || echo "[]")
             local deps_count=$(echo "$mypy_deps_json" | jq 'length' 2>/dev/null || echo "0")
 
+            # Detect pyproject.toml location for MyPy config
+            local mypy_config_arg=""
+            if [[ -f "pyproject.toml" ]]; then
+                mypy_config_arg='["--config-file=pyproject.toml"]'
+            elif [[ -f "backend/pyproject.toml" ]]; then
+                mypy_config_arg='["--config-file=backend/pyproject.toml"]'
+            elif [[ -f "src/pyproject.toml" ]]; then
+                mypy_config_arg='["--config-file=src/pyproject.toml"]'
+            else
+                mypy_config_arg='[]'  # Let MyPy find config automatically
+            fi
+
             # Always enable MyPy for Python projects to match CI behavior
             if [[ "$deps_count" -gt 0 ]]; then
                 print_status "Detected $deps_count MyPy dependencies - enabling MyPy hook"
@@ -257,7 +269,7 @@ EOF
     rev: v1.13.0
     hooks:
       - id: mypy
-        args: ["--config-file=pyproject.toml"]
+        args: $mypy_config_arg
         additional_dependencies:
 $mypy_deps_yaml
         files: '^(src|backend|app)/.*\.py$'
@@ -266,14 +278,14 @@ EOF
             else
                 # Enable MyPy but with empty dependencies (user must add manually)
                 print_status "No MyPy dependencies auto-detected - enabling with empty dependencies"
-                cat >> .pre-commit-config.yaml << 'EOF'
+                cat >> .pre-commit-config.yaml << EOF
   # MyPy type checking
   # Note: Enabled by default to match CI behavior. Add project-specific dependencies below.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.13.0
     hooks:
       - id: mypy
-        args: ["--config-file=pyproject.toml"]
+        args: $mypy_config_arg
         additional_dependencies: []
         # Common dependencies to add: pydantic, fastapi, httpx, types-*, numpy, etc.
         files: '^(src|backend|app)/.*\.py$'

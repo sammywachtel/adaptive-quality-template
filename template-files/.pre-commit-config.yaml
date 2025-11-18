@@ -75,11 +75,12 @@ repos:
 
   # MyPy type checking
   # Note: Enabled by default to match CI behavior. Add project-specific dependencies below.
+  # If MyPy fails with "Cannot find config file", adjust --config-file path (e.g., backend/pyproject.toml)
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.13.0
     hooks:
       - id: mypy
-        args: ["--config-file=pyproject.toml"]
+        args: []  # Config file path added by generate-config.sh based on project structure
         additional_dependencies: []
         # Common dependencies to add: pydantic, fastapi, httpx, types-*, numpy, etc.
         files: '^(src|backend|app)/.*\.py$'
