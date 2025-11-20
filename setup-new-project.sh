@@ -173,7 +173,8 @@ setup_adaptive_configuration() {
     
     # Generate project-specific configurations
     print_status "Generating adaptive configurations..."
-    "$TEMPLATE_DIR/scripts/generate-config.sh"
+    # Pass TEMPLATE_DIR so generate-config.sh knows where to find template files
+    TEMPLATE_DIR="$TEMPLATE_DIR" "$TEMPLATE_DIR/scripts/generate-config.sh"
     
     # Copy additional template files
     cp "$TEMPLATE_DIR/setup-dev.sh" .

@@ -38,7 +38,7 @@ repos:
 
       - id: frontend-tests
         name: Frontend Tests (affected files only)
-        entry: bash -c 'cd frontend && npm test -- --findRelatedTests --passWithNoTests --watchAll=false'
+        entry: bash -c 'cd frontend && if npm list vitest >/dev/null 2>&1; then npm test -- --findRelatedTests --passWithNoTests --run; elif npm list jest >/dev/null 2>&1; then npm test -- --findRelatedTests --passWithNoTests --watchAll=false; else npm test -- --findRelatedTests --passWithNoTests; fi'
         language: system
         files: ^frontend/.*\.(js|jsx|ts|tsx)$
         pass_filenames: false

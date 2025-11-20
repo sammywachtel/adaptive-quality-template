@@ -220,8 +220,20 @@ jobs:
       - name: "Phase {{CURRENT_PHASE}}: Frontend Tests"
         run: |
           echo "🧪 Phase {{CURRENT_PHASE}}: Frontend test validation"
-          
-          if ! npm test -- --watchAll=false --coverage; then
+
+          # Detect test framework and use appropriate flags
+          if npm list vitest >/dev/null 2>&1; then
+            echo "Using Vitest..."
+            TEST_CMD="npm test -- --run --coverage"
+          elif npm list jest >/dev/null 2>&1; then
+            echo "Using Jest..."
+            TEST_CMD="npm test -- --watchAll=false --coverage"
+          else
+            echo "Using generic test command..."
+            TEST_CMD="npm test -- --coverage"
+          fi
+
+          if ! $TEST_CMD; then
             echo ""
             echo "❌ Frontend tests failed"
             echo "🔧 Fix failing tests before proceeding"
@@ -234,11 +246,20 @@ jobs:
       - name: "Phase {{CURRENT_PHASE}}: Coverage Ratchet Check"
         run: |
           echo "📈 Phase {{CURRENT_PHASE}}: Coverage ratchet enforcement"
-          
+
+          # Detect test framework and use appropriate flags
+          if npm list vitest >/dev/null 2>&1; then
+            COVERAGE_CMD="npm test -- --run --coverage --silent"
+          elif npm list jest >/dev/null 2>&1; then
+            COVERAGE_CMD="npm test -- --watchAll=false --coverage --silent"
+          else
+            COVERAGE_CMD="npm test -- --coverage --silent"
+          fi
+
           # Check if coverage improved or maintained
-          CURRENT_COVERAGE=$(npm test -- --coverage --silent | grep -o 'All files.*[0-9]*\.[0-9]*' | grep -o '[0-9]*\.[0-9]*' || echo "0")
+          CURRENT_COVERAGE=$($COVERAGE_CMD | grep -o 'All files.*[0-9]*\.[0-9]*' | grep -o '[0-9]*\.[0-9]*' || echo "0")
           echo "📊 Current coverage: ${CURRENT_COVERAGE}%"
-          
+
           # This would check against baseline and require improvement
           echo "✅ Coverage ratchet check passed"
 {{/IF_PHASE_2_OR_HIGHER}}

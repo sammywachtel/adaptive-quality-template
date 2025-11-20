@@ -38,7 +38,18 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run Unit Tests
-        run: npm test -- --coverage --watchAll=false
+        run: |
+          # Detect test framework and use appropriate flags
+          if npm list vitest >/dev/null 2>&1; then
+            echo "Using Vitest..."
+            npm test -- --coverage --run
+          elif npm list jest >/dev/null 2>&1; then
+            echo "Using Jest..."
+            npm test -- --coverage --watchAll=false
+          else
+            echo "Using generic test command..."
+            npm test -- --coverage
+          fi
 
       - name: Run E2E Tests
         run: npm run test:e2e
