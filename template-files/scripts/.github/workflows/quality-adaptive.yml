@@ -159,8 +159,20 @@ jobs:
       - name: "Phase 0: Frontend Tests"
         run: |
           echo "🧪 Phase 0: Frontend test validation"
-          
-          if ! npm test -- --watchAll=false --coverage; then
+
+          # Detect test framework and use appropriate flags
+          if npm list vitest >/dev/null 2>&1; then
+            echo "Using Vitest..."
+            TEST_CMD="npm test -- --run --coverage"
+          elif npm list jest >/dev/null 2>&1; then
+            echo "Using Jest..."
+            TEST_CMD="npm test -- --watchAll=false --coverage"
+          else
+            echo "Using generic test command..."
+            TEST_CMD="npm test -- --coverage"
+          fi
+
+          if ! $TEST_CMD; then
             echo ""
             echo "❌ Frontend tests failed"
             echo "🔧 Fix failing tests before proceeding"

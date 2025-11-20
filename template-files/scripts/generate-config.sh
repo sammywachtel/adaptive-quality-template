@@ -14,7 +14,8 @@ NC='\033[0m' # No Color
 
 # Default paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEMPLATE_DIR="$(dirname "$SCRIPT_DIR")"
+# Allow TEMPLATE_DIR to be passed as environment variable, otherwise derive from script location
+TEMPLATE_DIR="${TEMPLATE_DIR:-$(dirname "$SCRIPT_DIR")}"
 PROJECT_ROOT="$(pwd)"
 
 # Global variables
@@ -486,9 +487,10 @@ except:
     
     # Fallback to master adaptive template
     if [[ $template_found == false && -f "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" ]]; then
-        template_found=true 
+        template_found=true
+        workflow_name="quality-adaptive.yml"  # Update workflow name for cleanup
         print_status "Using master adaptive template with phase conditionals"
-        
+
         # Process the master template with phase-aware conditionals
         process_master_adaptive_template "$TEMPLATE_DIR/.github/workflows/quality-adaptive.yml.template" ".github/workflows/quality-adaptive.yml"
     fi
@@ -496,10 +498,12 @@ except:
     # Last fallback to basic workflow
     if [[ $template_found == false ]]; then
         if [[ -f "$TEMPLATE_DIR/.github/workflows/quality-standardized.yml" ]]; then
+            workflow_name="quality-standardized.yml"  # Update workflow name for cleanup
             cp "$TEMPLATE_DIR/.github/workflows/quality-standardized.yml" .github/workflows/
             print_warning "Using fallback standardized workflow template"
         else
             # Generate a basic workflow from scratch
+            workflow_name="quality-basic.yml"  # Update workflow name for cleanup
             generate_basic_workflow ".github/workflows/quality-basic.yml"
             print_warning "Generated basic workflow - no templates found"
         fi

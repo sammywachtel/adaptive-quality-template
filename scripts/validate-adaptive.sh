@@ -623,15 +623,15 @@ show_summary() {
     
     echo -e "${BOLD}Results by Tool:${NC}"
     for result in "${VALIDATION_RESULTS[@]}"; do
-        IFS=':' read -r tool status message <<< "$result" || true
+        IFS=':' read -r tool status message <<< "$result"
         case "$status" in
             "PASSED")
                 echo -e "  ${GREEN}✅ $tool${NC}: $message"
-                ((passed_count++)) || true
+                ((passed_count++))
                 ;;
             "FAILED")
                 echo -e "  ${RED}❌ $tool${NC}: $message"
-                ((failed_count++)) || true
+                ((failed_count++))
                 ;;
         esac
     done
