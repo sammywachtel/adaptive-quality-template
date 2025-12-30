@@ -193,22 +193,36 @@ EOF
 
     # Add TypeScript/JavaScript hooks if detected
     if [[ "$has_typescript" == "true" || -d "$frontend_path" ]]; then
+        # Determine the correct working directory and file pattern
+        local work_dir="${frontend_path}"
+        local file_pattern='.*\.(js|jsx|ts|tsx)$'
+        local ts_pattern='.*\.(ts|tsx)$'
+
+        # If frontend is at root (.), don't add path prefix to patterns
+        if [[ "$frontend_path" == "." ]]; then
+            work_dir="."
+        else
+            # For subdirectories, include path in pattern for pre-commit filtering
+            file_pattern="^${frontend_path}/.*\.(js|jsx|ts|tsx)$"
+            ts_pattern="^${frontend_path}/.*\.(ts|tsx)$"
+        fi
+
         cat >> .pre-commit-config.yaml << EOF
   # Frontend hooks (TypeScript/JavaScript)
   - repo: local
     hooks:
       - id: eslint-check
         name: ESLint Check
-        entry: bash -c 'cd ${frontend_path:-frontend} && npm run lint'
+        entry: bash -c 'cd ${work_dir} && npm run lint'
         language: system
-        files: '^${frontend_path:-frontend}/.*\.(js|jsx|ts|tsx)$'
+        files: '${file_pattern}'
         pass_filenames: false
 
       - id: typescript-check
         name: TypeScript Check
-        entry: bash -c 'cd ${frontend_path:-frontend} && npx tsc --noEmit'
+        entry: bash -c 'cd ${work_dir} && npx tsc --noEmit'
         language: system
-        files: '^${frontend_path:-frontend}/.*\.(ts|tsx)$'
+        files: '${ts_pattern}'
         pass_filenames: false
 
 EOF
@@ -344,8 +358,12 @@ generate_package_scripts() {
         if [[ "$frontend_path" != "." ]]; then
             frontend_prefix="cd $frontend_path && "
         fi
-        
+
+        # Add base lint/lint:fix scripts for root-level or frontend directory
         scripts_to_add=$(echo "$scripts_to_add" | jq --arg prefix "$frontend_prefix" '. + {
+            "lint": ($prefix + "eslint . --ext .js,.jsx,.ts,.tsx"),
+            "lint:fix": ($prefix + "eslint . --ext .js,.jsx,.ts,.tsx --fix"),
+            "type-check": ($prefix + "tsc --noEmit"),
             "frontend:dev": ($prefix + "npm run dev"),
             "frontend:build": ($prefix + "npm run build"),
             "frontend:lint": ($prefix + "npm run lint"),
@@ -532,16 +550,27 @@ process_phase_workflow_template() {
     # Get current phase info
     local current_phase="0"
     local recommended_phase="0"
+    local phase_description="Baseline & Stabilization"
+
     if [[ -f ".quality-config.yaml" ]]; then
         current_phase=$(python3 -c "import yaml; print(yaml.safe_load(open('.quality-config.yaml')).get('quality_gates', {}).get('current_phase', 0))" 2>/dev/null || echo "0")
         recommended_phase=$(python3 -c "import yaml; print(yaml.safe_load(open('.quality-config.yaml')).get('quality_gates', {}).get('recommended_phase', 0))" 2>/dev/null || echo "0")
     fi
-    
+
+    # Set phase description based on current phase
+    case "$current_phase" in
+        "0") phase_description="Baseline & Stabilization" ;;
+        "1") phase_description="Changed-Code-Only Enforcement" ;;
+        "2") phase_description="Repository-Wide + Ratcheting" ;;
+        "3") phase_description="Full Strict Enforcement" ;;
+    esac
+
     # Perform comprehensive variable substitution
     sed -e "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
         -e "s|{{PROJECT_TYPE}}|$project_type|g" \
         -e "s|{{CURRENT_PHASE}}|$current_phase|g" \
         -e "s|{{RECOMMENDED_PHASE}}|$recommended_phase|g" \
+        -e "s|{{PHASE_DESCRIPTION}}|$phase_description|g" \
         -e "s|{{TIMESTAMP}}|$timestamp|g" \
         -e "s|{{HAS_FRONTEND}}|$has_frontend|g" \
         -e "s|{{HAS_BACKEND}}|$has_backend|g" \
@@ -560,14 +589,19 @@ process_master_adaptive_template() {
     local template_file="$1" 
     local output_file="$2"
     
-    # Get current phase
+    # Get current phase and project structure info
     local current_phase="0"
+    local has_frontend="false"
+    local has_backend="false"
+
     if [[ -f ".quality-config.yaml" ]]; then
         current_phase=$(python3 -c "import yaml; print(yaml.safe_load(open('.quality-config.yaml')).get('quality_gates', {}).get('current_phase', 0))" 2>/dev/null || echo "0")
+        has_frontend=$(python3 -c "import yaml; print(str(yaml.safe_load(open('.quality-config.yaml')).get('project', {}).get('structure', {}).get('has_frontend', False)).lower())" 2>/dev/null || echo "false")
+        has_backend=$(python3 -c "import yaml; print(str(yaml.safe_load(open('.quality-config.yaml')).get('project', {}).get('structure', {}).get('has_backend', False)).lower())" 2>/dev/null || echo "false")
     fi
-    
-    print_status "Processing master template for Phase $current_phase..."
-    
+
+    print_status "Processing master template for Phase $current_phase (frontend: $has_frontend, backend: $has_backend)..."
+
     # Use Python for sophisticated template processing with conditionals
     python3 << EOF
 import re
@@ -582,39 +616,63 @@ except Exception as e:
     sys.exit(1)
 
 current_phase = $current_phase
+has_frontend = '$has_frontend' == 'true'
+has_backend = '$has_backend' == 'true'
 
 # Process phase conditionals
-def process_conditionals(content, phase):
+def process_conditionals(content, phase, has_frontend, has_backend):
     # Process {{#IF_PHASE_X}} ... {{/IF_PHASE_X}} blocks
     for p in range(4):  # Phases 0-3
-        pattern = f'{{{{#IF_PHASE_{p}}}}}(.*?){{{{/IF_PHASE_{p}}}}}'
+        pattern = r'{{#IF_PHASE_%d}}(.*?){{/IF_PHASE_%d}}' % (p, p)
         if p == phase:
             # Keep content for current phase
             content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
         else:
-            # Remove content for other phases  
+            # Remove content for other phases
             content = re.sub(pattern, '', content, flags=re.DOTALL)
-    
-    # Process {{#IF_PHASE_GTE_X}} (greater than or equal) blocks
+
+    # Process {{#IF_PHASE_X_OR_HIGHER}} (more readable alias for GTE)
     for p in range(4):
-        pattern = f'{{{{#IF_PHASE_GTE_{p}}}}}(.*?){{{{/IF_PHASE_GTE_{p}}}}}'
+        pattern = r'{{#IF_PHASE_%d_OR_HIGHER}}(.*?){{/IF_PHASE_%d_OR_HIGHER}}' % (p, p)
         if phase >= p:
             content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
         else:
             content = re.sub(pattern, '', content, flags=re.DOTALL)
-    
+
+    # Process {{#IF_PHASE_GTE_X}} (greater than or equal) blocks
+    for p in range(4):
+        pattern = r'{{#IF_PHASE_GTE_%d}}(.*?){{/IF_PHASE_GTE_%d}}' % (p, p)
+        if phase >= p:
+            content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
+        else:
+            content = re.sub(pattern, '', content, flags=re.DOTALL)
+
     # Process {{#IF_PHASE_LTE_X}} (less than or equal) blocks
     for p in range(4):
-        pattern = f'{{{{#IF_PHASE_LTE_{p}}}}}(.*?){{{{/IF_PHASE_LTE_{p}}}}}'
+        pattern = r'{{#IF_PHASE_LTE_%d}}(.*?){{/IF_PHASE_LTE_%d}}' % (p, p)
         if phase <= p:
             content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
         else:
             content = re.sub(pattern, '', content, flags=re.DOTALL)
-    
+
+    # Process {{#IF_HAS_FRONTEND}} blocks
+    pattern = r'{{#IF_HAS_FRONTEND}}(.*?){{/IF_HAS_FRONTEND}}'
+    if has_frontend:
+        content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
+    else:
+        content = re.sub(pattern, '', content, flags=re.DOTALL)
+
+    # Process {{#IF_HAS_BACKEND}} blocks
+    pattern = r'{{#IF_HAS_BACKEND}}(.*?){{/IF_HAS_BACKEND}}'
+    if has_backend:
+        content = re.sub(pattern, r'\1', content, flags=re.DOTALL)
+    else:
+        content = re.sub(pattern, '', content, flags=re.DOTALL)
+
     return content
 
 # Process the template
-processed_content = process_conditionals(content, current_phase)
+processed_content = process_conditionals(content, current_phase, has_frontend, has_backend)
 
 # Write processed template
 try:

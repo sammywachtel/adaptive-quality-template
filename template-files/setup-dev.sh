@@ -170,6 +170,46 @@ main() {
         print_header "INSTALLING ROOT DEPENDENCIES"
         print_status $BLUE "Installing root package dependencies..."
         npm install
+
+        # Install ESLint if TypeScript files exist but ESLint is missing
+        print_status $BLUE "Checking for linting tools..."
+        if ls *.ts *.tsx components/**/*.tsx pages/**/*.tsx 2>/dev/null | head -1 >/dev/null; then
+            # TypeScript files detected - ensure ESLint is installed
+            if ! npm ls eslint 2>/dev/null | grep -q "eslint@"; then
+                print_status $YELLOW "TypeScript detected but ESLint not installed - adding ESLint..."
+                npm install --save-dev eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
+
+                # Create .eslintrc.json if it doesn't exist
+                if [[ ! -f ".eslintrc.json" && ! -f ".eslintrc.js" && ! -f "eslint.config.js" ]]; then
+                    print_status $BLUE "Creating ESLint configuration..."
+                    cat > .eslintrc.json << 'ESLINT_EOF'
+{
+  "parser": "@typescript-eslint/parser",
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "plugins": ["@typescript-eslint"],
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {}
+}
+ESLINT_EOF
+                    print_status $GREEN "✅ Created .eslintrc.json"
+                fi
+
+                print_status $GREEN "✅ ESLint installed and configured"
+            else
+                print_status $GREEN "✅ ESLint already installed"
+            fi
+        fi
     else
         print_status $BLUE "No package.json found - skipping npm dependencies (Python-only project)"
     fi
@@ -180,6 +220,42 @@ main() {
         cd frontend
         print_status $BLUE "Installing frontend dependencies..."
         npm ci
+
+        # Check for ESLint in frontend directory
+        if ls *.ts *.tsx src/**/*.tsx 2>/dev/null | head -1 >/dev/null; then
+            if ! npm ls eslint 2>/dev/null | grep -q "eslint@"; then
+                print_status $YELLOW "TypeScript detected in frontend but ESLint not installed - adding ESLint..."
+                npm install --save-dev eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
+
+                # Create .eslintrc.json if needed
+                if [[ ! -f ".eslintrc.json" && ! -f ".eslintrc.js" && ! -f "eslint.config.js" ]]; then
+                    cat > .eslintrc.json << 'ESLINT_EOF'
+{
+  "parser": "@typescript-eslint/parser",
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "plugins": ["@typescript-eslint"],
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {}
+}
+ESLINT_EOF
+                    print_status $GREEN "✅ Created frontend/.eslintrc.json"
+                fi
+
+                print_status $GREEN "✅ ESLint installed in frontend"
+            fi
+        fi
+
         print_status $GREEN "✅ Frontend dependencies installed"
         cd ..
     fi
