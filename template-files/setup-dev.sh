@@ -176,38 +176,91 @@ main() {
         if ls *.ts *.tsx components/**/*.tsx pages/**/*.tsx 2>/dev/null | head -1 >/dev/null; then
             # TypeScript files detected - ensure ESLint is installed
             if ! npm ls eslint 2>/dev/null | grep -q "eslint@"; then
-                print_status $YELLOW "TypeScript detected but ESLint not installed - adding ESLint..."
-                npm install --save-dev eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
+                print_status $YELLOW "TypeScript detected but ESLint not installed - adding ESLint v9..."
+                npm install --save-dev eslint@^9 @eslint/js @typescript-eslint/parser @typescript-eslint/eslint-plugin typescript-eslint
 
-                # Create .eslintrc.json if it doesn't exist
-                if [[ ! -f ".eslintrc.json" && ! -f ".eslintrc.js" && ! -f "eslint.config.js" ]]; then
-                    print_status $BLUE "Creating ESLint configuration..."
-                    cat > .eslintrc.json << 'ESLINT_EOF'
-{
-  "parser": "@typescript-eslint/parser",
-  "extends": [
-    "eslint:recommended",
-    "plugin:@typescript-eslint/recommended"
-  ],
-  "plugins": ["@typescript-eslint"],
-  "env": {
-    "browser": true,
-    "es2021": true,
-    "node": true
-  },
-  "parserOptions": {
-    "ecmaVersion": "latest",
-    "sourceType": "module"
-  },
-  "rules": {}
-}
-ESLINT_EOF
-                    print_status $GREEN "✅ Created .eslintrc.json"
+                # Determine config file extension (.mjs for CommonJS projects, .js for ESM)
+                local eslint_config_file="eslint.config.mjs"
+                if grep -q '"type".*:.*"module"' package.json 2>/dev/null; then
+                    eslint_config_file="eslint.config.js"
                 fi
 
-                print_status $GREEN "✅ ESLint installed and configured"
+                # Create ESLint v9 flat config if no config exists
+                if [[ ! -f "eslint.config.js" && ! -f "eslint.config.mjs" && ! -f ".eslintrc.json" && ! -f ".eslintrc.js" ]]; then
+                    print_status $BLUE "Creating ESLint v9 flat configuration..."
+                    cat > "$eslint_config_file" << 'ESLINT_EOF'
+// ESLint v9 Flat Configuration for TypeScript
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // Add custom rules here
+    },
+  },
+);
+ESLINT_EOF
+                    print_status $GREEN "✅ Created $eslint_config_file (v9 flat config)"
+                fi
+
+                print_status $GREEN "✅ ESLint v9 installed and configured"
             else
-                print_status $GREEN "✅ ESLint already installed"
+                # ESLint already installed - check version and migrate if needed
+                ESLINT_VERSION=$(npm ls eslint --depth=0 2>/dev/null | grep eslint@ | sed 's/.*@//' | cut -d' ' -f1)
+                ESLINT_MAJOR=$(echo "$ESLINT_VERSION" | cut -d. -f1)
+
+                if [[ "$ESLINT_MAJOR" -ge 9 ]]; then
+                    print_status $GREEN "✅ ESLint v$ESLINT_VERSION already installed"
+
+                    # Warn if using deprecated config format
+                    if [[ -f ".eslintrc.json" || -f ".eslintrc.js" ]] && [[ ! -f "eslint.config.js" && ! -f "eslint.config.mjs" ]]; then
+                        print_status $YELLOW "⚠️  ESLint v9 detected but using deprecated .eslintrc.* format"
+                        print_status $YELLOW "    Config will be ignored! Generating flat config..."
+
+                        # Determine config file extension
+                        local eslint_config_file="eslint.config.mjs"
+                        if grep -q '"type".*:.*"module"' package.json 2>/dev/null; then
+                            eslint_config_file="eslint.config.js"
+                        fi
+
+                        cat > "$eslint_config_file" << 'ESLINT_EOF'
+// ESLint v9 Flat Configuration for TypeScript
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // Add custom rules here
+    },
+  },
+);
+ESLINT_EOF
+                        print_status $GREEN "✅ Migrated to $eslint_config_file (flat config)"
+                        print_status $YELLOW "    You can now safely delete .eslintrc.* files"
+                    else
+                        print_status $GREEN "✅ Using ESLint v9 flat config"
+                    fi
+                else
+                    print_status $GREEN "✅ ESLint v$ESLINT_VERSION already installed (legacy)"
+                fi
             fi
         fi
     else
@@ -224,35 +277,81 @@ ESLINT_EOF
         # Check for ESLint in frontend directory
         if ls *.ts *.tsx src/**/*.tsx 2>/dev/null | head -1 >/dev/null; then
             if ! npm ls eslint 2>/dev/null | grep -q "eslint@"; then
-                print_status $YELLOW "TypeScript detected in frontend but ESLint not installed - adding ESLint..."
-                npm install --save-dev eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin
+                print_status $YELLOW "TypeScript detected in frontend but ESLint not installed - adding ESLint v9..."
+                npm install --save-dev eslint@^9 @eslint/js @typescript-eslint/parser @typescript-eslint/eslint-plugin typescript-eslint
 
-                # Create .eslintrc.json if needed
-                if [[ ! -f ".eslintrc.json" && ! -f ".eslintrc.js" && ! -f "eslint.config.js" ]]; then
-                    cat > .eslintrc.json << 'ESLINT_EOF'
-{
-  "parser": "@typescript-eslint/parser",
-  "extends": [
-    "eslint:recommended",
-    "plugin:@typescript-eslint/recommended"
-  ],
-  "plugins": ["@typescript-eslint"],
-  "env": {
-    "browser": true,
-    "es2021": true,
-    "node": true
-  },
-  "parserOptions": {
-    "ecmaVersion": "latest",
-    "sourceType": "module"
-  },
-  "rules": {}
-}
-ESLINT_EOF
-                    print_status $GREEN "✅ Created frontend/.eslintrc.json"
+                # Determine config file extension (.mjs for CommonJS projects, .js for ESM)
+                local eslint_config_file="eslint.config.mjs"
+                if grep -q '"type".*:.*"module"' package.json 2>/dev/null; then
+                    eslint_config_file="eslint.config.js"
                 fi
 
-                print_status $GREEN "✅ ESLint installed in frontend"
+                # Create ESLint v9 flat config if no config exists
+                if [[ ! -f "eslint.config.js" && ! -f "eslint.config.mjs" && ! -f ".eslintrc.json" && ! -f ".eslintrc.js" ]]; then
+                    cat > "$eslint_config_file" << 'ESLINT_EOF'
+// ESLint v9 Flat Configuration for TypeScript
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // Add custom rules here
+    },
+  },
+);
+ESLINT_EOF
+                    print_status $GREEN "✅ Created frontend/$eslint_config_file (v9 flat config)"
+                fi
+
+                print_status $GREEN "✅ ESLint v9 installed in frontend"
+            else
+                # Check version and migrate if needed (same logic as root)
+                ESLINT_VERSION=$(npm ls eslint --depth=0 2>/dev/null | grep eslint@ | sed 's/.*@//' | cut -d' ' -f1)
+                ESLINT_MAJOR=$(echo "$ESLINT_VERSION" | cut -d. -f1)
+
+                if [[ "$ESLINT_MAJOR" -ge 9 ]]; then
+                    if [[ -f ".eslintrc.json" || -f ".eslintrc.js" ]] && [[ ! -f "eslint.config.js" && ! -f "eslint.config.mjs" ]]; then
+                        print_status $YELLOW "⚠️  ESLint v9 detected but using deprecated config - migrating..."
+
+                        # Determine config file extension
+                        local eslint_config_file="eslint.config.mjs"
+                        if grep -q '"type".*:.*"module"' package.json 2>/dev/null; then
+                            eslint_config_file="eslint.config.js"
+                        fi
+
+                        cat > "$eslint_config_file" << 'ESLINT_EOF'
+// ESLint v9 Flat Configuration for TypeScript
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // Add custom rules here
+    },
+  },
+);
+ESLINT_EOF
+                        print_status $GREEN "✅ Migrated frontend to $eslint_config_file"
+                    fi
+                fi
             fi
         fi
 

@@ -360,9 +360,10 @@ generate_package_scripts() {
         fi
 
         # Add base lint/lint:fix scripts for root-level or frontend directory
+        # Note: ESLint v9 flat config doesn't use --ext flag, file patterns are in config
         scripts_to_add=$(echo "$scripts_to_add" | jq --arg prefix "$frontend_prefix" '. + {
-            "lint": ($prefix + "eslint . --ext .js,.jsx,.ts,.tsx"),
-            "lint:fix": ($prefix + "eslint . --ext .js,.jsx,.ts,.tsx --fix"),
+            "lint": ($prefix + "eslint ."),
+            "lint:fix": ($prefix + "eslint . --fix"),
             "type-check": ($prefix + "tsc --noEmit"),
             "frontend:dev": ($prefix + "npm run dev"),
             "frontend:build": ($prefix + "npm run build"),
