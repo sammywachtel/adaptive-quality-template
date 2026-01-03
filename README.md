@@ -294,6 +294,155 @@ additional_dependencies:
   - your-internal-library
 ```
 
+## 🧪 Universal Test Framework Detection
+
+The template automatically detects and configures your test framework (Jest or Vitest) with intelligent fallback handling:
+
+### How It Works
+```bash
+# During validation, the system detects your test framework configuration
+./scripts/validate-adaptive.sh
+
+# Example detection output:
+# ✅ Detected test framework: Vitest
+# Running: npm test -- --run --changed
+```
+
+### Supported Test Frameworks
+**Jest (Automatic Detection):**
+- Detects `jest` in package.json dependencies
+- Uses `--findRelatedTests` for changed-files-only testing
+- Provides Jest-specific error fixes: `npm run test -- [file]`
+
+**Vitest (Automatic Detection):**
+- Detects `vitest` in package.json dependencies
+- Uses `--run --changed` for changed-files-only testing
+- Provides Vitest-specific error fixes: `npm run test -- --run [file]`
+
+**Generic Fallback:**
+- Works with any test framework via `npm test`
+- Graceful degradation if framework not recognized
+- Clear error messages with framework-specific commands
+
+### Smart Test Execution
+```bash
+# Phase 0: Runs all tests
+npm test
+
+# Phase 1: Only tests for changed files (Jest)
+npm test -- --findRelatedTests src/changed-file.ts
+
+# Phase 1: Only tests for changed files (Vitest)
+npm test -- --run --changed
+
+# Manual override: Test specific files
+npm test -- --run src/my-test.spec.ts  # Vitest
+npm test -- src/my-test.spec.ts        # Jest
+```
+
+### Configuration
+```yaml
+# .quality-config.yaml
+testing:
+  unit:
+    enabled: auto                    # Auto-detects test framework
+    framework: auto                  # "jest", "vitest", or "auto"
+    changed_files_only: true         # Phase 1+ optimization
+    coverage_required: false         # Enable in Phase 2+
+```
+
+### Troubleshooting
+**If framework detection fails:**
+1. Verify test framework in package.json dependencies
+2. Check that npm test script is configured
+3. Manually set framework in .quality-config.yaml: `framework: "jest"` or `framework: "vitest"`
+4. Run validation with debug: `DEBUG=1 ./scripts/validate-adaptive.sh`
+
+**Both Jest and Vitest installed:**
+- Detection prioritizes the framework defined in package.json test script
+- Override with explicit configuration: `framework: "vitest"`
+
+## 🎨 ESLint v9 Flat Config Auto-Migration
+
+The template automatically handles ESLint v9's new flat config format with zero manual intervention:
+
+### Automatic Version Detection
+```bash
+# During setup, the system detects your ESLint version
+./setup-new-project.sh
+
+# ESLint v9+ → Generates eslint.config.mjs (flat config)
+# ESLint v8 → Keeps .eslintrc.json (legacy format)
+```
+
+### Generated Flat Config (ESLint v9+)
+```javascript
+// eslint.config.mjs (automatically generated)
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // Custom rules auto-configured
+    },
+  },
+);
+```
+
+### Smart Migration
+**Detects deprecated config:**
+- Finds existing `.eslintrc.*` files with ESLint v9 installed
+- Warns that legacy config is ignored in v9
+- Auto-generates `eslint.config.mjs` with TypeScript support
+- Suggests removing old config files post-migration
+
+**Package.json updates (v9 compatible):**
+```json
+{
+  "scripts": {
+    "lint": "eslint .",         // No --ext flag needed in v9
+    "lint:fix": "eslint . --fix"
+  }
+}
+```
+
+### Benefits
+- ✅ **Zero manual work** - Automatic version detection and config generation
+- ✅ **TypeScript support** - Uses modern `typescript-eslint` package
+- ✅ **Future-proof** - Aligned with ESLint's new config system
+- ✅ **Backward compatible** - Supports both v8 and v9
+
+### Configuration
+The template installs appropriate packages based on ESLint version:
+```json
+// ESLint v9+ installations
+{
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "typescript-eslint": "^8.0.0"  // Modern flat config package
+  }
+}
+```
+
+### Troubleshooting
+**Migration from v8 to v9:**
+1. Upgrade ESLint: `npm install --save-dev eslint@latest`
+2. Run template setup: `./setup-new-project.sh --overwrite-tools`
+3. Template generates new `eslint.config.mjs` automatically
+4. Remove old config: `rm .eslintrc.json`
+5. Test: `npm run lint`
+
+**Learn more:** [ESLint v9 Migration Guide](https://eslint.org/docs/latest/use/configure/migration-guide)
+
 ## 📊 Configuration-Driven Behavior
 
 ### Main Configuration: `.quality-config.yaml`
@@ -351,11 +500,11 @@ testing:
 
 ### Frontend Technologies
 - ✅ **React** (18+) with TypeScript/JavaScript
-- ✅ **Vue** with TypeScript/JavaScript  
+- ✅ **Vue** with TypeScript/JavaScript
 - ✅ **Angular** with TypeScript
 - ✅ **Svelte/SvelteKit** with TypeScript
 - ✅ **Vite, Webpack, Parcel** build tools
-- ✅ **Jest, Vitest, Cypress** testing frameworks
+- ✅ **Jest, Vitest, Cypress** with automatic framework detection (see [Test Framework Detection](#-universal-test-framework-detection))
 
 ### Backend Technologies
 - ✅ **FastAPI** (Python 3.11+)
@@ -365,9 +514,9 @@ testing:
 - ✅ **Custom API frameworks**
 
 ### Quality Tools (Auto-Configured)
-- ✅ **ESLint** with auto-fix capabilities
+- ✅ **ESLint** with auto-fix and v9 flat config support (see [ESLint v9 Auto-Migration](#-eslint-v9-flat-config-auto-migration))
 - ✅ **TypeScript** compiler with strict mode options
-- ✅ **Black, isort, flake8, mypy** for Python  
+- ✅ **Black, isort, flake8, mypy** for Python with intelligent dependency detection
 - ✅ **Prettier** for code formatting
 - ✅ **detect-secrets** for security scanning
 - ✅ **Pre-commit hooks** with performance optimization
