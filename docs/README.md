@@ -72,7 +72,6 @@ Additional documentation outside this structured guide:
 
 - **[Main README](../README.md)** - Project overview and quick start
 - **[DEVELOPMENT.md](../template-files/DEVELOPMENT.md)** - Generated project development guide
-- **[CLAUDE.md](../.claude/CLAUDE.md)** - Template development and architecture
 
 ## 🔍 Finding Information
 
