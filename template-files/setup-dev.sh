@@ -262,6 +262,16 @@ ESLINT_EOF
                     print_status $GREEN "✅ ESLint v$ESLINT_VERSION already installed (legacy)"
                 fi
             fi
+
+            # Install Prettier if TypeScript files exist but Prettier is missing
+            print_status $BLUE "Checking for code formatting tools..."
+            if ! npm ls prettier 2>/dev/null | grep -q "prettier@"; then
+                print_status $YELLOW "Prettier not installed - adding Prettier..."
+                npm install --save-dev prettier prettier-plugin-tailwindcss
+                print_status $GREEN "✅ Prettier installed with Tailwind plugin"
+            else
+                print_status $GREEN "✅ Prettier already installed"
+            fi
         fi
     else
         print_status $BLUE "No package.json found - skipping npm dependencies (Python-only project)"
@@ -352,6 +362,16 @@ ESLINT_EOF
                         print_status $GREEN "✅ Migrated frontend to $eslint_config_file"
                     fi
                 fi
+            fi
+
+            # Install Prettier if TypeScript files exist but Prettier is missing
+            print_status $BLUE "Checking for code formatting tools..."
+            if ! npm ls prettier 2>/dev/null | grep -q "prettier@"; then
+                print_status $YELLOW "Prettier not installed in frontend - adding Prettier..."
+                npm install --save-dev prettier prettier-plugin-tailwindcss
+                print_status $GREEN "✅ Prettier installed in frontend with Tailwind plugin"
+            else
+                print_status $GREEN "✅ Prettier already installed in frontend"
             fi
         fi
 

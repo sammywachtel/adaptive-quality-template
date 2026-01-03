@@ -211,6 +211,15 @@ EOF
   # Frontend hooks (TypeScript/JavaScript)
   - repo: local
     hooks:
+      # Prettier formatting (auto-fix)
+      - id: prettier
+        name: Prettier Format
+        entry: bash -c 'cd ${work_dir} && npx prettier --write --ignore-unknown'
+        language: system
+        files: '${file_pattern}'
+        pass_filenames: true
+
+      # ESLint validation
       - id: eslint-check
         name: ESLint Check
         entry: bash -c 'cd ${work_dir} && npm run lint'
@@ -218,12 +227,22 @@ EOF
         files: '${file_pattern}'
         pass_filenames: false
 
+      # TypeScript compilation check
       - id: typescript-check
         name: TypeScript Check
         entry: bash -c 'cd ${work_dir} && npx tsc --noEmit'
         language: system
         files: '${ts_pattern}'
         pass_filenames: false
+
+      # Run tests for changed files (if test framework detected)
+      - id: test-changed
+        name: Test Changed Files
+        entry: bash -c 'cd ${work_dir} && npm run test:run -- --changed 2>/dev/null || npm run test -- --run --changed 2>/dev/null || true'
+        language: system
+        files: '${file_pattern}'
+        pass_filenames: false
+        stages: [commit]
 
 EOF
     fi
@@ -364,11 +383,16 @@ generate_package_scripts() {
         scripts_to_add=$(echo "$scripts_to_add" | jq --arg prefix "$frontend_prefix" '. + {
             "lint": ($prefix + "eslint ."),
             "lint:fix": ($prefix + "eslint . --fix"),
+            "format": ($prefix + "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\""),
+            "format:check": ($prefix + "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md}\""),
             "type-check": ($prefix + "tsc --noEmit"),
+            "quality:gate": ($prefix + "npm run format:check && npm run lint && npm run type-check && npm test -- --run"),
             "frontend:dev": ($prefix + "npm run dev"),
             "frontend:build": ($prefix + "npm run build"),
             "frontend:lint": ($prefix + "npm run lint"),
             "frontend:lint:fix": ($prefix + "npm run lint:fix"),
+            "frontend:format": ($prefix + "npm run format"),
+            "frontend:format:check": ($prefix + "npm run format:check"),
             "frontend:type-check": ($prefix + "npx tsc --noEmit"),
             "frontend:test": ($prefix + "npm test")
         }')
@@ -395,7 +419,11 @@ generate_package_scripts() {
             "dev": "concurrently \"npm run frontend:dev\" \"npm run backend:dev\"",
             "lint": "npm run frontend:lint && npm run backend:lint",
             "lint:fix": "npm run frontend:lint:fix && npm run backend:format",
-            "test": "npm run frontend:test && npm run backend:test"
+            "format": "npm run frontend:format && npm run backend:format",
+            "format:check": "npm run frontend:format:check && (cd backend && black --check . && isort --check-only .)",
+            "type-check": "npm run frontend:type-check",
+            "test": "npm run frontend:test && npm run backend:test",
+            "quality:gate": "npm run format:check && npm run lint && npm run type-check && npm run test"
         }')
     fi
     
@@ -783,10 +811,142 @@ cleanup_old_workflow_files() {
     fi
 }
 
+# Function to generate Prettier configuration
+generate_prettier_config() {
+    print_status "Generating Prettier configuration..."
+
+    local has_frontend=$(extract_detection_value '.project.has_frontend')
+    local frontend_path=$(extract_detection_value '.project.frontend_path')
+
+    # Generate .prettierrc.json (works for both root and frontend/)
+    if [[ "$has_frontend" == "true" ]]; then
+        local target_dir="."
+        if [[ "$frontend_path" != "." && -d "$frontend_path" ]]; then
+            target_dir="$frontend_path"
+        fi
+
+        if [[ ! -f "$target_dir/.prettierrc.json" ]]; then
+            cat > "$target_dir/.prettierrc.json" << 'PRETTIER_EOF'
+{
+  "semi": true,
+  "trailingComma": "es5",
+  "singleQuote": true,
+  "printWidth": 80,
+  "tabWidth": 2,
+  "useTabs": false,
+  "arrowParens": "always",
+  "endOfLine": "lf",
+  "bracketSpacing": true,
+  "jsxSingleQuote": false,
+  "plugins": ["prettier-plugin-tailwindcss"]
+}
+PRETTIER_EOF
+            print_success "Generated $target_dir/.prettierrc.json"
+        fi
+
+        # Generate .prettierignore
+        if [[ ! -f "$target_dir/.prettierignore" ]]; then
+            cat > "$target_dir/.prettierignore" << 'PRETTIERIGNORE_EOF'
+# Build outputs
+dist
+build
+lib
+coverage
+.coverage
+
+# Dependencies
+node_modules
+functions/node_modules
+
+# Lock files
+package-lock.json
+functions/package-lock.json
+
+# Logs
+*.log
+
+# Generated
+.vite
+.vite-temp
+
+# Configuration
+.eslintrc.cjs
+PRETTIERIGNORE_EOF
+            print_success "Generated $target_dir/.prettierignore"
+        fi
+    fi
+}
+
+# Function to generate EditorConfig
+generate_editorconfig() {
+    print_status "Generating EditorConfig..."
+
+    if [[ ! -f ".editorconfig" ]]; then
+        cat > .editorconfig << 'EDITORCONFIG_EOF'
+# EditorConfig is awesome: https://EditorConfig.org
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{js,jsx,ts,tsx,json,css,scss,md}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.py]
+indent_style = space
+indent_size = 4
+
+[Makefile]
+indent_style = tab
+EDITORCONFIG_EOF
+        print_success "Generated .editorconfig"
+    fi
+}
+
+# Function to generate Node version files
+generate_node_version_files() {
+    print_status "Generating Node version files..."
+
+    # Try to detect Node version from package.json engines field
+    local node_version="20.18.0"  # Default to LTS
+    if [[ -f "package.json" ]] && command -v jq >/dev/null 2>&1; then
+        local engines_node=$(jq -r '.engines.node // empty' package.json 2>/dev/null)
+        if [[ -n "$engines_node" ]]; then
+            # Extract version number (handle formats like ">=18.0.0", "^20.0.0", etc.)
+            node_version=$(echo "$engines_node" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+            if [[ -z "$node_version" ]]; then
+                # If no specific version, extract major version
+                local major=$(echo "$engines_node" | grep -oE '[0-9]+' | head -1)
+                node_version="${major}.0.0"
+            fi
+        fi
+    fi
+
+    # Generate .nvmrc
+    if [[ ! -f ".nvmrc" ]]; then
+        echo "$node_version" > .nvmrc
+        print_success "Generated .nvmrc (Node $node_version)"
+    fi
+
+    # Generate .node-version (for asdf users)
+    if [[ ! -f ".node-version" ]]; then
+        echo "$node_version" > .node-version
+        print_success "Generated .node-version (Node $node_version)"
+    fi
+}
+
 # Function to create baseline files
 create_baseline_files() {
     print_status "Creating baseline files..."
-    
+
     # Create secrets baseline if detect-secrets is available
     if command -v detect-secrets >/dev/null 2>&1; then
         if [[ ! -f ".secrets.baseline" ]]; then
@@ -794,7 +954,7 @@ create_baseline_files() {
             print_success "Created secrets baseline"
         fi
     fi
-    
+
     # Create .gitignore entries for quality tools
     if [[ -f ".gitignore" ]]; then
         if ! grep -q "# Quality gate files" .gitignore; then
@@ -833,8 +993,11 @@ generate_configurations() {
     generate_precommit_config
     generate_package_scripts
     generate_ci_workflow
+    generate_prettier_config
+    generate_editorconfig
+    generate_node_version_files
     create_baseline_files
-    
+
     print_success "All configurations generated successfully!"
     
     # Show summary
