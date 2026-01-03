@@ -2,15 +2,53 @@
 
 ## Quality Gates Overview
 
-This project uses comprehensive quality gates to ensure code quality and prevent issues from reaching CI/CD.
+This project uses an **adaptive quality gate system** with graduated enforcement to ensure code quality without disrupting development velocity.
 
-### 🚨 Important: All commits MUST pass strict quality checks
+### 🎛️ Quality Gate Phases
+
+The system supports 4 progressive phases (see `.quality-config.yaml` to check current phase):
+
+**Phase 0: Baseline & Stabilization**
+- Documents current code quality baseline
+- Prevents regressions from baseline
+- Allows legacy issues but blocks new problems
+- Focus: Stability
+
+**Phase 1: Changed-Code-Only Enforcement** (⚡ Recommended for large codebases)
+- Strict quality on new/modified files only
+- Legacy code generates warnings
+- **Performance**: Sub-10-second validation vs 2-5 minutes full repo
+- Focus: Perfect new code
+
+**Phase 2: Ratchet & Expand Scope**
+- Repository-wide enforcement
+- Coverage ratchet requires gradual improvement
+- Focus: Progressive improvement
+
+**Phase 3: Normalize & Harden**
+- Full strict enforcement
+- Zero technical debt tolerance
+- Focus: Production-ready quality
+
+### 📊 Phase Management
+```bash
+# Check current phase
+./scripts/quality-gate-manager.sh status
+
+# Advance to next phase when ready
+./scripts/quality-gate-manager.sh advance
+
+# Set specific phase
+./scripts/quality-gate-manager.sh set-phase 1
+```
+
+### 🚨 Important: Quality Checks Based on Phase
 
 Quality gates are enforced at multiple levels:
 
-1. **Pre-commit hooks** - Run automatically on every commit
+1. **Pre-commit hooks** - Run automatically on every commit (scope varies by phase)
 2. **CI/CD pipeline** - Validates all changes on push/PR
-3. **Manual checks** - Run locally before committing
+3. **Manual checks** - Run locally before committing: `npm run quality:gate`
 
 ### Quality Commands
 
@@ -32,21 +70,21 @@ npm run precommit:run        # Run all pre-commit hooks manually
 
 **New team member? Run this once:**
 ```bash
-./setup-dev.sh --with-quality-gates  # Comprehensive setup with quality gates
-# OR
-./setup-dev.sh --basic               # Basic setup without quality gates
+./setup-dev.sh  # Comprehensive setup with quality gates
 ```
 
-**Upgrade existing project:**
+**Apply adaptive template to existing project:**
 ```bash
-./add-quality-gates.sh
+./setup-new-project.sh /path/to/project
 ```
 
 This automatically:
-- Creates a Python virtual environment in `backend/.venv` (Python 3.11+)
+- Detects your project type (TypeScript, Python, full-stack, or hybrid)
+- Creates isolated environments (Python virtual env if backend detected)
 - Installs all dependencies in isolated environments
 - Sets up pre-commit hooks and verifies your environment
-- Prevents system-wide Python package conflicts
+- Configures quality gates based on detected technologies
+- Prevents system-wide package conflicts
 
 ## Development Workflow
 
@@ -63,9 +101,14 @@ npm run backend:dev   # Backend only (port 8001)
 
 ### 2. Make Your Changes
 
-- Edit files in `frontend/src/` for React components
-- Edit files in `backend/app/` for API endpoints
+**For Full-Stack Projects:**
+- Edit frontend files (typically `frontend/src/` or `src/`)
+- Edit backend files (typically `backend/app/`, `backend/src/`, or `app/`)
 - Write tests as you develop (mandatory for all features)
+
+**For Single-Language Projects:**
+- Edit source files in detected source directory (`src/`, `app/`, etc.)
+- Co-locate tests with source code or in `__tests__/` directories
 
 ### 3. Quality Gate Validation
 
@@ -155,8 +198,11 @@ cd backend && source .venv/bin/activate && pip freeze > requirements.txt
 ```
 
 ### Testing
+
+The template **automatically detects your test framework** (Jest or Vitest) and uses the appropriate commands.
+
 ```bash
-# Run all tests once
+# Run all tests once (auto-detects framework)
 npm test
 
 # Run tests in watch mode (for development)
@@ -166,7 +212,36 @@ npm run test:watch
 npm run test:coverage
 
 # Run specific test
-cd frontend && npm test -- ComponentName.test.tsx
+npm test -- path/to/test-file.test.ts
+```
+
+#### 🧪 Test Framework Auto-Detection
+
+**Detected Framework: Jest**
+```bash
+# Phase 0: Runs all tests
+npm test
+
+# Phase 1+: Only tests for changed files
+npm test -- --findRelatedTests src/changed-file.ts
+```
+
+**Detected Framework: Vitest**
+```bash
+# Phase 0: Runs all tests
+npm test
+
+# Phase 1+: Only tests for changed files
+npm test -- --run --changed
+```
+
+**Check detected framework:**
+```bash
+# View test framework configuration
+cat .quality-config.yaml | grep -A5 "testing:"
+
+# Run validation to see detection output
+./scripts/validate-adaptive.sh
 ```
 
 ### Pre-commit Management
@@ -213,24 +288,146 @@ pre-commit run --files frontend/src/components/MyComponent.tsx
 
 # Or manually
 pre-commit install
+
+# Verify hooks are installed
+pre-commit run --all-files
 ```
 
 ### CI Failing After Local Success
 ```bash
 # Run the same checks CI uses
 npm run lint      # ESLint validation
-npx tsc --noEmit  # TypeScript check (from frontend/)
+npx tsc --noEmit  # TypeScript check (from frontend/ if exists)
 npm test          # Full test suite
+
+# Check phase configuration
+./scripts/quality-gate-manager.sh status
 
 # If still failing, check CI logs for specific errors
 ```
 
-### Performance Issues
+### Test Framework Detection Issues
+
+**Framework not detected or wrong framework used:**
 ```bash
-# Skip hooks temporarily (NOT recommended)
+# 1. Verify test framework in package.json
+cat package.json | grep -E "(jest|vitest)"
+
+# 2. Check detection in config
+cat .quality-config.yaml | grep -A5 "testing:"
+
+# 3. Manually set framework in .quality-config.yaml
+# Edit testing.unit.framework: "jest" or "vitest"
+
+# 4. Regenerate configuration
+./scripts/generate-config.sh update
+
+# 5. Test detection
+./scripts/validate-adaptive.sh
+```
+
+**Both Jest and Vitest installed:**
+```bash
+# Detection uses package.json test script
+# Override in .quality-config.yaml:
+testing:
+  unit:
+    framework: "vitest"  # or "jest"
+```
+
+**Test command fails:**
+```bash
+# Debug with verbose output
+DEBUG=1 ./scripts/validate-adaptive.sh
+
+# For Jest:
+npm test -- --verbose
+
+# For Vitest:
+npm test -- --run --reporter=verbose
+```
+
+### ESLint v9 Migration Issues
+
+**ESLint ignoring configuration:**
+```bash
+# 1. Check ESLint version
+npm list eslint
+
+# 2. If v9+, ensure flat config exists
+ls -la eslint.config.mjs eslint.config.js
+
+# 3. If .eslintrc.json exists with ESLint v9, it's ignored
+# Generate new config:
+./setup-new-project.sh --overwrite-tools
+
+# 4. Remove deprecated config
+rm .eslintrc.json .eslintrc.js .eslintrc.yml
+
+# 5. Test linting
+npm run lint
+```
+
+**TypeScript linting not working with ESLint v9:**
+```bash
+# Ensure typescript-eslint is installed (not @typescript-eslint/*)
+npm install --save-dev typescript-eslint
+
+# Regenerate flat config
+./scripts/generate-config.sh update
+
+# Test
+npm run lint
+```
+
+### Quality Gate Phase Issues
+
+**Validation too slow (Phase 0):**
+```bash
+# Advance to Phase 1 for changed-files-only
+./scripts/quality-gate-manager.sh set-phase 1
+
+# Verify phase
+./scripts/quality-gate-manager.sh status
+
+# Test performance
+time ./scripts/validate-adaptive.sh
+# Should be < 10 seconds for small changes
+```
+
+**Phase 1 not detecting changed files:**
+```bash
+# Check git status
+git status
+
+# Run validation with debug
+DEBUG=1 ./scripts/validate-adaptive.sh
+
+# Verify git is initialized
+git rev-parse --git-dir
+```
+
+**Want to skip quality gates temporarily:**
+```bash
+# ❌ NOT RECOMMENDED: Skip hooks
 git commit --no-verify -m "Emergency fix"
 
-# Better: Fix the underlying issue and commit normally
+# ✅ BETTER: Fix issues or adjust phase
+./scripts/quality-gate-manager.sh set-phase 0  # More permissive
+# Fix issues
+# Then commit normally
+```
+
+### Performance Issues
+```bash
+# Check current phase (affects validation speed)
+./scripts/quality-gate-manager.sh status
+
+# Phase 0: Full validation (slower)
+# Phase 1: Changed files only (faster)
+
+# For large codebases, use Phase 1:
+./scripts/quality-gate-manager.sh set-phase 1
 ```
 
 ### Test Failures
@@ -238,32 +435,64 @@ git commit --no-verify -m "Emergency fix"
 # Run tests with more details
 npm test -- --verbose
 
-# Run specific failing test
+# For Jest:
 npm test -- --testNamePattern="your test name"
+npm test -- --no-coverage --verbose path/to/test.test.ts
 
-# Debug failing test
-npm test -- --no-coverage --verbose ComponentName.test.tsx
+# For Vitest:
+npm test -- --run --reporter=verbose
+npm test -- --run path/to/test.test.ts
+```
+
+### Python Virtual Environment Issues
+```bash
+# Recreate virtual environment
+cd backend
+rm -rf .venv
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Verify activation
+which python  # Should show backend/.venv/bin/python
 ```
 
 ## File Structure Reference
 
+**Adaptive structure varies by project type. Common elements:**
+
 ```
-lyrics/
-├── .pre-commit-config.yaml    # Pre-commit hook configuration
+your-project/
+├── .quality-config.yaml       # Adaptive quality gate configuration
+├── .pre-commit-config.yaml    # Pre-commit hook configuration (auto-generated)
 ├── setup-dev.sh               # One-command environment setup
-├── .github/workflows/lint.yml # CI validation pipeline
-├── frontend/                  # React TypeScript frontend
-│   ├── src/components/        # React components
-│   │   └── __tests__/         # Component tests
-│   ├── src/utils/             # Utility functions
-│   │   └── __tests__/         # Utility tests
-│   └── package.json           # Frontend dependencies
-├── backend/                   # FastAPI Python backend
-│   ├── .venv/                 # Python virtual environment (auto-created)
-│   ├── app/                   # Backend application code
-│   └── requirements.txt       # Python dependencies
-└── package.json               # Root scripts and tooling
+├── .github/workflows/         # CI validation pipelines (auto-generated)
+├── scripts/                   # Quality gate scripts
+│   ├── detect-project-type.sh # Project structure detection
+│   ├── generate-config.sh     # Configuration management
+│   ├── quality-gate-manager.sh # Phase management
+│   └── validate-adaptive.sh   # Universal validation
+└── package.json               # Root scripts and tooling (if Node.js detected)
 ```
+
+**Full-Stack Project Additional Structure:**
+```
+├── frontend/                  # Frontend application (if detected)
+│   ├── src/                   # Source code
+│   │   ├── components/        # UI components
+│   │   │   └── __tests__/     # Component tests
+│   │   └── utils/             # Utility functions
+│   └── package.json           # Frontend dependencies
+├── backend/                   # Backend application (if detected)
+│   ├── .venv/                 # Python virtual environment (auto-created)
+│   ├── app/ or src/           # Backend application code
+│   └── requirements.txt       # Python dependencies (if Python)
+```
+
+**Project Type Variations:**
+- **TypeScript-only**: Only frontend/ or src/ with TypeScript
+- **Python-only**: Only backend/, app/, or src/ with Python files
+- **Hybrid**: Detected languages combined with adaptive tooling
 
 ## Team Workflow Summary
 
