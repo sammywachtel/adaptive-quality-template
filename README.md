@@ -538,10 +538,25 @@ testing:
 
 ## 📚 Comprehensive Documentation
 
-- **[CLAUDE.md](CLAUDE.md)** - Complete system architecture and commands
+- **[Documentation Index](docs/README.md)** - Complete guide organized by the Diátaxis framework
 - **[DEVELOPMENT.md](template-files/DEVELOPMENT.md)** - Generated project workflows
 - **[Project Detection](scripts/detect-project-type.sh)** - Smart detection logic
 - **[Quality Gate Manager](scripts/quality-gate-manager.sh)** - Phase management system
+
+### Quick Documentation Links
+
+**How-To Guides** (task-oriented):
+- [Apply Template to Existing Project](docs/how-to/apply-template-to-existing-project.md)
+- [Progress Through Quality Gate Phases](docs/how-to/progress-quality-gates.md)
+- [Upgrade ESLint from v8 to v9](docs/how-to/upgrade-eslint-v9.md)
+- [Configure Test Framework Detection](docs/how-to/configure-test-framework.md)
+
+**Reference Documentation**:
+- [Configuration API Reference](docs/reference/quality-config-api.md)
+- [Test Framework Support Matrix](docs/reference/test-framework-support.md)
+
+**Understanding**:
+- [Quality Gate Philosophy](docs/explanation/quality-gate-philosophy.md)
 
 ## 🤝 Contributing
 
